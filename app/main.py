@@ -1,19 +1,25 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
+import numpy as np
+from datetime import datetime
 
-# Импортируем функции из других модулей приложения
 from app.data import fetch_moex_eod_data
 from app.preprocessing import preprocess_data
 from app.predict import predict_price
 
+# Импортируем менеджер моделей, который загрузит все модели при старте
+from app.model_manager import load_models
+
 app = FastAPI(title="MOEX Price Prediction API")
 
-# Модель запроса для предсказания
+# Загружаем модели для всех тикеров из папки models
+models_dict = load_models()
+
 class PredictionRequest(BaseModel):
     ticker: str
-    start_date: str   # Формат YYYY-MM-DD
-    end_date: str     # Формат YYYY-MM-DD
+    start_date: str     # "YYYY-MM-DD"
+    end_date: str       # "YYYY-MM-DD"
 
 @app.get("/")
 def read_root():
@@ -21,29 +27,31 @@ def read_root():
 
 @app.post("/predict")
 def predict(request: PredictionRequest):
-    # Загружаем данные для указанного тикера
-    df = fetch_moex_eod_data(
-        security=request.ticker,
-        engine="stock",
-        market="shares",
-        board="TQBR",
-        start_date=request.start_date,
-        end_date=request.end_date
-    )
+    ticker = request.ticker.upper()
+    # Проверяем, что для указанного тикера загружена модель
+    if ticker not in models_dict:
+        raise HTTPException(status_code=404, detail=f"Модель для тикера {ticker} не найдена")
+
+    # Загружаем данные с MOEX
+    df = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
     if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="Данные не найдены для указанного тикера")
-    
-    # Предобработка данных (например, сортировка, расчет RSI и др.)
-    df_processed = preprocess_data(df, ticker=request.ticker)
-    
-    # Получение предсказания от модели
-    try:
-        prediction = predict_price(df_processed, ticker=request.ticker)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при предсказании: {e}")
-    
-    return {"ticker": request.ticker, "predicted_price": prediction}
+        raise HTTPException(status_code=404, detail="Данные не найдены")
+
+    # Предобработка данных
+    df_processed = preprocess_data(df, ticker=ticker)
+    features = [col for col in df_processed.columns if col.startswith(("OPEN", "HIGH", "LOW", "CLOSE", "VOL", "RSI", "BODY", "UPPER_SHADOW", "LOWER_SHADOW"))]
+    # Преобразуем в numpy-массив
+    data = df_processed[features].values.astype(float)
+
+    # Выполняем предсказание с помощью загруженной модели
+    model_info = models_dict[ticker]
+    prediction = predict_price(model_info["model"], model_info["scaler_X"], model_info["scaler_y"], data, seq_length=20)
+
+    return {
+        "ticker": ticker,
+        "predicted_price": prediction,
+        "date": datetime.today().strftime("%Y-%m-%d")
+    }
 
 if __name__ == "__main__":
-    # Запуск FastAPI приложения через uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
