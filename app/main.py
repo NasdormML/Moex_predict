@@ -2,56 +2,95 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
+import pandas as pd
 
-from app.data import fetch_moex_eod_data
+from app.data import fetch_all_data
 from app.preprocessing import preprocess_data
 from app.predict import predict_price
-
-# Импортируем менеджер моделей, который загрузит все модели при старте
 from app.model_manager import load_models
 
-app = FastAPI(title="MOEX Price Prediction API")
-
-# Загружаем модели для всех тикеров из папки models
-models_dict = load_models()
+app = FastAPI(title="MOEX Prediction API")
 
 class PredictionRequest(BaseModel):
     ticker: str
-    start_date: str     # "YYYY-MM-DD"
-    end_date: str       # "YYYY-MM-DD"
+    days_back: int = 30  # По умолчанию прогноз на основе 30 дней истории
 
-@app.get("/")
-def read_root():
-    return {"message": "Добро пожаловать в API предсказания цен MOEX"}
+@app.on_event("startup")
+async def startup_event():
+    try:
+        app.state.models = load_models()
+        print(f"Loaded models: {list(app.state.models.keys())}")
+    except Exception as e:
+        raise RuntimeError(f"Model loading failed: {str(e)}")
 
 @app.post("/predict")
-def predict(request: PredictionRequest):
-    ticker = request.ticker.upper()
-    # Проверяем, что для указанного тикера загружена модель
-    if ticker not in models_dict:
-        raise HTTPException(status_code=404, detail=f"Модель для тикера {ticker} не найдена")
+async def predict(request: PredictionRequest):
+    try:
+        ticker = request.ticker.upper()
+        
+        # Конфигурация источников данных
+        configs = [
+            {
+                "security": ticker,
+                "market": "shares",
+                "interval": 24,  # Дневные свечи
+                "days_back": request.days_back + 5  # Загружаем больше данных для RSI
+            },
+            {
+                "security": "RTSI",
+                "market": "index",
+                "days_back": request.days_back
+            },
+            {
+                "security": "USD000UTSTOM",
+                "market": "currency",
+                "days_back": request.days_back
+            }
+        ]
 
-    # Загружаем данные с MOEX
-    df = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
-    if df is None or df.empty:
-        raise HTTPException(status_code=404, detail="Данные не найдены")
+        # Загрузка и объединение данных
+        merged_df = fetch_all_data(configs)
+        if merged_df is None or merged_df.empty:
+            raise HTTPException(404, detail="Не удалось загрузить данные")
 
-    # Предобработка данных
-    df_processed = preprocess_data(df, ticker=ticker)
-    features = [col for col in df_processed.columns if col.startswith(("OPEN", "HIGH", "LOW", "CLOSE", "VOL", "RSI", "BODY", "UPPER_SHADOW", "LOWER_SHADOW"))]
-    # Преобразуем в numpy-массив
-    data = df_processed[features].values.astype(float)
+        # Предобработка данных
+        processed_df = preprocess_data(merged_df, ticker)
+        
+        # Проверка модели
+        if ticker not in app.state.models:
+            raise HTTPException(404, detail=f"Модель для {ticker} не найдена")
 
-    # Выполняем предсказание с помощью загруженной модели
-    model_info = models_dict[ticker]
-    prediction = predict_price(model_info["model"], model_info["scaler_X"], model_info["scaler_y"], data, seq_length=20)
+        # Подготовка данных для модели
+        if len(processed_df) < 20:
+            raise HTTPException(400, 
+                detail="Недостаточно данных для прогноза (минимум 20 дней)")
 
-    return {
-        "ticker": ticker,
-        "predicted_price": prediction,
-        "date": datetime.today().strftime("%Y-%m-%d")
-    }
+        # Извлекаем признаки (исключая дату)
+        features = processed_df.drop(columns=["date"]).values.astype(np.float32)
+
+        # Прогноз
+        model_info = app.state.models[ticker]
+        prediction = predict_price(
+            model_info["model"],
+            model_info["scaler_X"],
+            model_info["scaler_y"],
+            features,
+            seq_length=20
+        )
+
+        return {
+            "ticker": ticker,
+            "predicted_price": round(float(prediction), 2),
+            "currency": "RUB",
+            "last_date": processed_df["date"].iloc[-1].strftime("%Y-%m-%d"),
+            "used_days": len(processed_df)
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(500, detail=f"Ошибка прогноза: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

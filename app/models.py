@@ -33,21 +33,6 @@ class AttentionLayer(Layer):
         return context
 
 def build_model(seq_length, num_features, lstm_units, gru_units, dense_units, dropout_rate, learning_rate):
-    """
-    Создаёт и компилирует модель на основе входных гиперпараметров.
-    
-    Parameters:
-        seq_length (int): Длина входной последовательности.
-        num_features (int): Число признаков.
-        lstm_units (int): Число единиц в слое LSTM.
-        gru_units (int): Число единиц в слое GRU.
-        dense_units (int): Число единиц в Dense-слое.
-        dropout_rate (float): Доля dropout.
-        learning_rate (float): Скорость обучения.
-        
-    Returns:
-        compiled model (tf.keras.Model)
-    """
     inp = Input(shape=(seq_length, num_features))
     x = LSTM(lstm_units, return_sequences=True)(inp)
     x = Dropout(dropout_rate)(x)
