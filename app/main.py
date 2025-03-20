@@ -2,95 +2,129 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, date
 import pandas as pd
 
-from app.data import fetch_all_data
+from app.data import fetch_moex_intraday_data, fetch_moex_eod_data
 from app.preprocessing import preprocess_data
 from app.predict import predict_price
 from app.model_manager import load_models
 
-app = FastAPI(title="MOEX Prediction API")
+app = FastAPI(title="MOEX Price Prediction API")
+
+# Загружаем модели (на данный момент только для SBER)
+models_dict = load_models()
 
 class PredictionRequest(BaseModel):
     ticker: str
-    days_back: int = 30  # По умолчанию прогноз на основе 30 дней истории
+    start_date: str  # Формат "YYYY-MM-DD"
+    end_date: str    # Формат "YYYY-MM-DD"
 
-@app.on_event("startup")
-async def startup_event():
-    try:
-        app.state.models = load_models()
-        print(f"Loaded models: {list(app.state.models.keys())}")
-    except Exception as e:
-        raise RuntimeError(f"Model loading failed: {str(e)}")
+@app.get("/")
+def read_root():
+    return {"message": "Добро пожаловать в API предсказания цен MOEX"}
 
 @app.post("/predict")
-async def predict(request: PredictionRequest):
+def predict(request: PredictionRequest):
+    ticker = request.ticker.upper()
+    if ticker not in models_dict:
+        raise HTTPException(status_code=404, detail=f"Модель для тикера {ticker} не найдена")
+    
+    # Преобразуем даты запроса в date
     try:
-        ticker = request.ticker.upper()
-        
-        # Конфигурация источников данных
-        configs = [
-            {
-                "security": ticker,
-                "market": "shares",
-                "interval": 24,  # Дневные свечи
-                "days_back": request.days_back + 5  # Загружаем больше данных для RSI
-            },
-            {
-                "security": "RTSI",
-                "market": "index",
-                "days_back": request.days_back
-            },
-            {
-                "security": "USD000UTSTOM",
-                "market": "currency",
-                "days_back": request.days_back
-            }
-        ]
-
-        # Загрузка и объединение данных
-        merged_df = fetch_all_data(configs)
-        if merged_df is None or merged_df.empty:
-            raise HTTPException(404, detail="Не удалось загрузить данные")
-
-        # Предобработка данных
-        processed_df = preprocess_data(merged_df, ticker)
-        
-        # Проверка модели
-        if ticker not in app.state.models:
-            raise HTTPException(404, detail=f"Модель для {ticker} не найдена")
-
-        # Подготовка данных для модели
-        if len(processed_df) < 20:
-            raise HTTPException(400, 
-                detail="Недостаточно данных для прогноза (минимум 20 дней)")
-
-        # Извлекаем признаки (исключая дату)
-        features = processed_df.drop(columns=["date"]).values.astype(np.float32)
-
-        # Прогноз
-        model_info = app.state.models[ticker]
-        prediction = predict_price(
-            model_info["model"],
-            model_info["scaler_X"],
-            model_info["scaler_y"],
-            features,
-            seq_length=20
-        )
-
-        return {
-            "ticker": ticker,
-            "predicted_price": round(float(prediction), 2),
-            "currency": "RUB",
-            "last_date": processed_df["date"].iloc[-1].strftime("%Y-%m-%d"),
-            "used_days": len(processed_df)
-        }
-
-    except HTTPException as he:
-        raise he
+        req_start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+        req_end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Неверный формат даты. Используйте 'YYYY-MM-DD'")
+    
+    today_date = date.today()
+    
+    # Если конечная дата меньше сегодняшней, используем EOD данные, иначе – intraday.
+    if req_end < today_date:
+        df_sber = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
+        df_imoex = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
+        df_usd = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
+    else:
+        df_sber = fetch_moex_intraday_data(ticker, interval=1, from_date=request.start_date, till_date=request.end_date)
+        df_imoex = fetch_moex_intraday_data("IMOEX", interval=1, from_date=request.start_date, till_date=request.end_date)
+        if df_imoex is None or df_imoex.empty:
+            df_imoex = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
+        df_usd = fetch_moex_intraday_data("USD000UTSTOM", interval=1, from_date=request.start_date, till_date=request.end_date)
+        if df_usd is None or df_usd.empty:
+            df_usd = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
+    
+    # Проверяем, что данные для основного тикера получены
+    if df_sber is None or df_sber.empty:
+        raise HTTPException(status_code=404, detail=f"Данные для тикера {ticker} не найдены")
+    if (df_imoex is None or df_imoex.empty) or (df_usd is None or df_usd.empty):
+        raise HTTPException(status_code=404, detail="Данные для дополнительных индикаторов не найдены")
+    
+    # Приводим имена столбцов во всех DataFrame к верхнему регистру
+    df_sber.columns = [col.upper() for col in df_sber.columns]
+    df_imoex.columns = [col.upper() for col in df_imoex.columns]
+    df_usd.columns = [col.upper() for col in df_usd.columns]
+    
+    # Обработка столбца даты: если intraday, ожидаем столбец BEGIN, иначе – TRADEDATE
+    if "BEGIN" in df_sber.columns:
+        df_sber["TRADEDATE"] = pd.to_datetime(df_sber["BEGIN"])
+    else:
+        df_sber["TRADEDATE"] = pd.to_datetime(df_sber["TRADEDATE"])
+    df_sber.sort_values("TRADEDATE", inplace=True)
+    df_sber.reset_index(drop=True, inplace=True)
+    
+    if "BEGIN" in df_imoex.columns:
+        df_imoex["TRADEDATE"] = pd.to_datetime(df_imoex["BEGIN"])
+    else:
+        df_imoex["TRADEDATE"] = pd.to_datetime(df_imoex.get("TRADETIME", df_imoex.get("TRADEDATE")))
+    df_imoex.sort_values("TRADEDATE", inplace=True)
+    df_imoex.reset_index(drop=True, inplace=True)
+    
+    if "BEGIN" in df_usd.columns:
+        df_usd["TRADEDATE"] = pd.to_datetime(df_usd["BEGIN"])
+    else:
+        df_usd["TRADEDATE"] = pd.to_datetime(df_usd.get("TRADETIME", df_usd.get("TRADEDATE")))
+    df_usd.sort_values("TRADEDATE", inplace=True)
+    df_usd.reset_index(drop=True, inplace=True)
+    
+    # Объединяем данные по TRADEDATE (используем данные SBER как базовые)
+    merged_df = df_sber.merge(
+        df_imoex[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_IMOEX"}),
+        on="TRADEDATE", how="left")
+    merged_df = merged_df.merge(
+        df_usd[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_USD"}),
+        on="TRADEDATE", how="left")
+    merged_df.dropna(subset=["CLOSE_IMOEX", "CLOSE_USD"], inplace=True)
+    merged_df.reset_index(drop=True, inplace=True)
+    
+    # Предобработка данных для тикера (приводим столбцы к нужному виду и вычисляем RSI)
+    df_processed = preprocess_data(merged_df, ticker=ticker)
+    
+    # Формирование набора признаков для модели
+    features = [
+        f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
+        "CLOSE_IMOEX", "CLOSE_USD", f"RSI_{ticker}"
+    ]
+    missing = [col for col in features if col not in df_processed.columns]
+    if missing:
+        raise HTTPException(status_code=500, detail=f"Отсутствуют признаки: {missing}")
+    
+    data = df_processed[features].values.astype(float)
+    
+    # Проверяем, что данных достаточно для формирования последовательности (seq_length = 20)
+    if data.shape[0] < 20:
+        raise HTTPException(status_code=422, detail=f"Недостаточно данных для последовательности. Требуется минимум 20 записей, получено {data.shape[0]}")
+    
+    model_info = models_dict[ticker]
+    try:
+        prediction = predict_price(model_info["model"], model_info["scaler_X"], model_info["scaler_y"], data, seq_length=20)
     except Exception as e:
-        raise HTTPException(500, detail=f"Ошибка прогноза: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    return {
+        "ticker": ticker,
+        "predicted_price": prediction,
+        "date": datetime.today().strftime("%Y-%m-%d")
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

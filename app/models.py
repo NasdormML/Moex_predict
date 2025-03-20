@@ -11,16 +11,8 @@ class AttentionLayer(Layer):
     
     def build(self, input_shape):
         hidden_dim = input_shape[-1]
-        self.W = self.add_weight(
-            name='att_weight',
-            shape=(hidden_dim, 1),
-            initializer='glorot_uniform'
-        )
-        self.b = self.add_weight(
-            name='att_bias',
-            shape=(input_shape[1], 1),
-            initializer='zeros'
-        )
+        self.W = self.add_weight(name='att_weight', shape=(hidden_dim, 1), initializer='glorot_uniform')
+        self.b = self.add_weight(name='att_bias', shape=(input_shape[1], 1), initializer='zeros')
         super(AttentionLayer, self).build(input_shape)
     
     def call(self, inputs):

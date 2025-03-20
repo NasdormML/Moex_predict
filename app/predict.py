@@ -1,16 +1,18 @@
 import numpy as np
 
 def predict_price(model, scaler_X, scaler_y, data, seq_length=20):
-    # Prepare sequence
+    if data.shape[0] < seq_length:
+        raise ValueError(f"Недостаточно данных для последовательности. Требуется минимум {seq_length} записей, получено {data.shape[0]}")
+    
+    # Берем последние seq_length записей
     sequence = data[-seq_length:]
-    sequence = np.expand_dims(sequence, axis=0)
+    num_features = sequence.shape[1]
     
-    # Scale features
-    scaled_sequence = scaler_X.transform(sequence[0])
-    scaled_sequence = np.expand_dims(scaled_sequence, axis=0)
+    # Масштабируем входные данные:
+    # Приводим данные к 2D, применяем scaler_X и возвращаем в 3D форму
+    sequence_reshaped = sequence.reshape(-1, num_features)
+    sequence_scaled = scaler_X.transform(sequence_reshaped).reshape(1, seq_length, num_features)
     
-    # Predict
-    pred_scaled = model.predict(scaled_sequence)
-    
-    # Inverse scale target
-    return scaler_y.inverse_transform(pred_scaled)[0][0]
+    pred_scaled = model.predict(sequence_scaled)
+    pred = scaler_y.inverse_transform(pred_scaled)
+    return float(pred[0][0])
