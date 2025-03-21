@@ -93,7 +93,12 @@ def predict(request: PredictionRequest):
     merged_df = merged_df.merge(
         df_usd[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_USD"}),
         on="TRADEDATE", how="left")
-    merged_df.dropna(subset=["CLOSE_IMOEX", "CLOSE_USD"], inplace=True)
+    
+
+    ############################# Стоит проследить за заполнением, возможно нужна корректировка в метод ################################# 
+    # Вместо удаления строк с пропусками заполняем отсутствующие значения методом ffill и bfill
+    merged_df['CLOSE_IMOEX'] = merged_df['CLOSE_IMOEX'].ffill().bfill()
+    merged_df['CLOSE_USD'] = merged_df['CLOSE_USD'].ffill().bfill()
     merged_df.reset_index(drop=True, inplace=True)
     
     # Предобработка данных для тикера (приводим столбцы к нужному виду и вычисляем RSI)
