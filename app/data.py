@@ -1,7 +1,9 @@
 import requests
 import pandas as pd
+import xml.etree.ElementTree as ET
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+from datetime import datetime
 
 def get_with_retries(url, params, timeout=30, retries=3):
     session = requests.Session()
@@ -38,7 +40,8 @@ def fetch_moex_intraday_data(security, interval, from_date, till_date, start=0, 
             "from": from_date,
             "till": till_date,
             "iss.meta": "off",
-            "start": start
+            "start": start,
+            "limit": limit  # передаём лимит
         }
         response = get_with_retries(base_url, params=params, timeout=30, retries=3)
         if response is None:
@@ -66,10 +69,10 @@ def fetch_moex_eod_data(security, engine, market, board, start_date, end_date):
     all_data = []
     columns = None
     offset = 0
-    limit = 100
+    limit = 100  # задаем лимит записей за запрос
 
     while True:
-        params = {"from": start_date, "till": end_date, "start": offset}
+        params = {"from": start_date, "till": end_date, "start": offset, "limit": limit}
         response = get_with_retries(base_url, params=params, timeout=30, retries=3)
         if response is None:
             break
@@ -92,3 +95,24 @@ def fetch_moex_eod_data(security, engine, market, board, start_date, end_date):
         return pd.DataFrame(all_data, columns=columns)
     else:
         return None
+
+def fetch_cbr_usd_rate(date_obj: datetime) -> float:
+    """
+    Получаем курс USD с ЦБ РФ для указанной даты.
+    """
+    date_str = date_obj.strftime("%d/%m/%Y")
+    url = f"http://www.cbr.ru/scripts/XML_daily.asp?date_req={date_str}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
+        # Ищем элемент, где CharCode равен "USD"
+        for valute in root.findall('Valute'):
+            if valute.find('CharCode').text == 'USD':
+                value_str = valute.find('Value').text
+                # Замена запятой на точку для корректного преобразования в float
+                value = float(value_str.replace(',', '.'))
+                return value
+    except Exception as e:
+        print("Ошибка получения данных с ЦБ РФ:", e)
+    return None

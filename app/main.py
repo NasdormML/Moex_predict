@@ -2,17 +2,18 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
 import numpy as np
+import math
 from datetime import datetime, date
 import pandas as pd
 
-from app.data import fetch_moex_intraday_data, fetch_moex_eod_data
+from app.data import fetch_moex_intraday_data, fetch_moex_eod_data, fetch_cbr_usd_rate
 from app.preprocessing import preprocess_data
 from app.predict import predict_price
 from app.model_manager import load_models
 
 app = FastAPI(title="MOEX Price Prediction API")
 
-# Загружаем модели (на данный момент только для SBER)
+# Загружаем модели (например, для SBER и GAZP)
 models_dict = load_models()
 
 class PredictionRequest(BaseModel):
@@ -39,7 +40,7 @@ def predict(request: PredictionRequest):
     
     today_date = date.today()
     
-    # Если конечная дата меньше сегодняшней, используем EOD данные, иначе – intraday.
+    # Получаем данные по SBER, IMOEX и USD
     if req_end < today_date:
         df_sber = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
         df_imoex = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
@@ -52,6 +53,15 @@ def predict(request: PredictionRequest):
         df_usd = fetch_moex_intraday_data("USD000UTSTOM", interval=1, from_date=request.start_date, till_date=request.end_date)
         if df_usd is None or df_usd.empty:
             df_usd = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
+    
+    # Если данные по USD отсутствуют, используем данные ЦБ РФ
+    if df_usd is None or df_usd.empty:
+        dates = pd.date_range(start=request.start_date, end=request.end_date)
+        usd_rates = []
+        for d in dates:
+            rate = fetch_cbr_usd_rate(d)
+            usd_rates.append(rate)
+        df_usd = pd.DataFrame({"TRADEDATE": dates, "CLOSE": usd_rates})
     
     # Проверяем, что данные для основного тикера получены
     if df_sber is None or df_sber.empty:
@@ -94,14 +104,12 @@ def predict(request: PredictionRequest):
         df_usd[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_USD"}),
         on="TRADEDATE", how="left")
     
-
-    ############################# Стоит проследить за заполнением, возможно нужна корректировка в метод ################################# 
-    # Вместо удаления строк с пропусками заполняем отсутствующие значения методом ffill и bfill
+    # Заполняем пропуски методом ffill и bfill для дополнительных индикаторов
     merged_df['CLOSE_IMOEX'] = merged_df['CLOSE_IMOEX'].ffill().bfill()
     merged_df['CLOSE_USD'] = merged_df['CLOSE_USD'].ffill().bfill()
     merged_df.reset_index(drop=True, inplace=True)
     
-    # Предобработка данных для тикера (приводим столбцы к нужному виду и вычисляем RSI)
+    # Предобработка данных для тикера (включает вычисление RSI)
     df_processed = preprocess_data(merged_df, ticker=ticker)
     
     # Формирование набора признаков для модели
@@ -124,6 +132,10 @@ def predict(request: PredictionRequest):
         prediction = predict_price(model_info["model"], model_info["scaler_X"], model_info["scaler_y"], data, seq_length=20)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+    # Проверяем, что предсказание является конечным числом
+    if not math.isfinite(prediction):
+        raise HTTPException(status_code=500, detail="Предсказанная цена не является допустимым числом")
     
     return {
         "ticker": ticker,
