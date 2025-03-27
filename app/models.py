@@ -1,41 +1,45 @@
-import tensorflow as tf
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Layer, Input, LSTM, GRU, Dense, Dropout
+import torch
+import torch.nn as nn
 
-class AttentionLayer(Layer):
-    """
-    Кастомный слой внимания для временных рядов.
-    """
-    def __init__(self, **kwargs):
-        super(AttentionLayer, self).__init__(**kwargs)
+class AttentionLayer(nn.Module):
+    def __init__(self, hidden_dim, timesteps):
+        super(AttentionLayer, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.timesteps = timesteps
+        self.W = nn.Parameter(torch.Tensor(hidden_dim, 1))
+        self.b = nn.Parameter(torch.zeros(timesteps, 1))
+        self.reset_parameters()
     
-    def build(self, input_shape):
-        hidden_dim = input_shape[-1]
-        self.W = self.add_weight(name='att_weight', shape=(hidden_dim, 1), initializer='glorot_uniform')
-        self.b = self.add_weight(name='att_bias', shape=(input_shape[1], 1), initializer='zeros')
-        super(AttentionLayer, self).build(input_shape)
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.W)
     
-    def call(self, inputs):
-        e = tf.tensordot(inputs, self.W, axes=[[2], [0]]) + self.b
-        e = tf.squeeze(e, axis=-1)
-        alpha = tf.nn.softmax(e)
-        alpha = tf.expand_dims(alpha, axis=-1)
-        context = inputs * alpha
-        context = tf.reduce_sum(context, axis=1)
+    def forward(self, x):
+        # x: (batch, timesteps, hidden_dim)
+        e = torch.matmul(x, self.W) + self.b  # (batch, timesteps, 1)
+        e = e.squeeze(-1)  # (batch, timesteps)
+        alpha = torch.softmax(e, dim=1)  # (batch, timesteps)
+        alpha = alpha.unsqueeze(-1)  # (batch, timesteps, 1)
+        context = x * alpha  # (batch, timesteps, hidden_dim)
+        context = torch.sum(context, dim=1)  # (batch, hidden_dim)
         return context
 
-def build_model(seq_length, num_features, lstm_units, gru_units, dense_units, dropout_rate, learning_rate):
-    inp = Input(shape=(seq_length, num_features))
-    x = LSTM(lstm_units, return_sequences=True)(inp)
-    x = Dropout(dropout_rate)(x)
-    x = GRU(gru_units, return_sequences=True)(x)
-    x = Dropout(dropout_rate)(x)
-    x = AttentionLayer()(x)
-    x = Dense(dense_units, activation="relu")(x)
-    x = Dropout(dropout_rate)(x)
-    out = Dense(1)(x)
+class PricePredictionModel(nn.Module):
+    def __init__(self, seq_length, num_features, output_dim, lstm_units, fc_units, dropout_rate):
+        super(PricePredictionModel, self).__init__()
+        self.lstm = nn.LSTM(input_size=num_features, hidden_size=lstm_units, num_layers=1, batch_first=True)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.attention = AttentionLayer(hidden_dim=lstm_units, timesteps=seq_length)
+        self.fc1 = nn.Linear(lstm_units, fc_units)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(fc_units, output_dim)
     
-    model = Model(inputs=inp, outputs=out)
-    optimizer = tf.keras.optimizers.Nadam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, loss="mse")
-    return model
+    def forward(self, x):
+        # x: (batch, seq_length, num_features)
+        lstm_out, _ = self.lstm(x)
+        x = self.dropout(lstm_out)
+        attn_out = self.attention(x)
+        x = self.fc1(attn_out)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
