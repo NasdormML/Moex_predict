@@ -1,35 +1,51 @@
 import optuna
-from tensorflow.keras.callbacks import EarlyStopping
-from app.models import build_model
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from app.models import PricePredictionModel
+from torch.utils.data import DataLoader
 
-def optimize_model(X_train, y_train, X_val, y_val, seq_length, num_features, n_trials=30):
-    """
-    Выполняет подбор гиперпараметров с использованием Optuna.
+def objective(trial, train_loader, val_loader, seq_length, num_features, device):
+    lstm_units = trial.suggest_int("lstm_units", 64, 256, step=32)
+    fc_units = trial.suggest_int("fc_units", 32, 128, step=16)
+    dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.3, step=0.05)
+    learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
     
-    Parameters:
-        X_train, y_train: Обучающие данные.
-        X_val, y_val: Данные для валидации.
-        seq_length (int): Длина входной последовательности.
-        num_features (int): Число признаков.
-        n_trials (int): Количество испытаний.
-        
-    Returns:
-        best_params (dict): Лучшие гиперпараметры.
-        study: Объект исследования Optuna.
-    """
-    def objective(trial):
-        lstm_units = trial.suggest_int("lstm_units", 64, 256, step=32)
-        gru_units = trial.suggest_int("gru_units", 32, 128, step=16)
-        dense_units = trial.suggest_int("dense_units", 32, 128, step=16)
-        dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.3, step=0.05)
-        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
-        
-        model = build_model(seq_length, num_features, lstm_units, gru_units, dense_units, dropout_rate, learning_rate)
-        cb = [EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)]
-        history = model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=50, batch_size=16, callbacks=cb, verbose=0)
-        return min(history.history["val_loss"])
+    model = PricePredictionModel(seq_length, num_features, output_dim=1,
+                                 lstm_units=lstm_units, fc_units=fc_units, dropout_rate=dropout_rate)
+    model.to(device)
     
+    criterion = nn.MSELoss()
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-5)
+    
+    num_epochs = 20
+    for epoch in range(num_epochs):
+        model.train()
+        for X_batch, y_batch in train_loader:
+            X_batch = X_batch.to(device)
+            y_batch = y_batch.to(device)
+            optimizer.zero_grad()
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
+            loss.backward()
+            optimizer.step()
+        
+        model.eval()
+        val_losses = []
+        with torch.no_grad():
+            for X_batch, y_batch in val_loader:
+                X_batch = X_batch.to(device)
+                y_batch = y_batch.to(device)
+                outputs = model(X_batch)
+                loss = criterion(outputs, y_batch)
+                val_losses.append(loss.item())
+        avg_val_loss = sum(val_losses) / len(val_losses)
+        trial.report(avg_val_loss, epoch)
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned()
+    return avg_val_loss
+
+def optimize_model(train_loader, val_loader, seq_length, num_features, n_trials=30, device=torch.device('cpu')):
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=n_trials)
-    best_params = study.best_params
-    return best_params, study
+    study.optimize(lambda trial: objective(trial, train_loader, val_loader, seq_length, num_features, device), n_trials=n_trials)
+    return study.best_params, study
