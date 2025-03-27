@@ -118,7 +118,6 @@ if __name__ == "__main__":
     
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     
-    # Синхронизированные гиперпараметры согласно рабочей версии ноутбука:
     model = PricePredictionModel(seq_length, len(features), output_dim=1,
                                  lstm_units=150, fc_units=64, dropout_rate=0.15)
     model.to(device)
