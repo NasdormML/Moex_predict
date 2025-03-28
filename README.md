@@ -1,160 +1,146 @@
-## MOEX Price Prediction
+# MOEX Price Prediction
 
-[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)  
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
 [![FastAPI 0.95+](https://img.shields.io/badge/FastAPI-0.95+-green.svg)](https://fastapi.tiangolo.com/)
 
-**MOEX Price Prediction** is an end-to-end project designed to forecast Moscow Exchange (MOEX) stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA), and a deep learning model (LSTM with an Attention mechanism). The predictions are served via a REST API built with FastAPI.
+**MOEX Price Prediction** is a project that forecasts Moscow Exchange stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA), and a deep learning model built with PyTorch. The project provides an end-to-end solution—from data preprocessing and model training to serving predictions via a FastAPI REST API.
 
 ---
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Project Structure](#project-structure)
-3. [Key Components](#key-components)
-4. [Installation](#installation)
-5. [Model Training](#model-training)
-6. [Running the FastAPI App](#running-the-fastapi-app)
-7. [API Usage](#api-usage)
-8. [Notebooks](#notebooks)
-9. [License](#license)
+1. [Project Overview](#project-overview)
+2. [Key Features](#key-features)
+3. [Architecture and Structure](#architecture-and-structure)
+4. [Technologies and Tools](#technologies-and-tools)
+5. [Installation and Setup](#installation-and-setup)
+6. [Model Training and Visualization](#model-training-and-visualization)
+7. [API and Demo](#api-and-demo)
+8. [License](#license)
 
 ---
 
-## Overview
+## Project Overview
 
-- **Data Source:**  
-  Fetches data from the MOEX ISS API for stocks (`TQBR`), indices (`SNDX` for IMOEX), and currency pairs (`CETS` for USD/RUB).  
-  Missing USD data can be replaced by the Central Bank of Russia (CBR) rates if needed.
-
-- **Model Architecture:**  
-  Implements an **LSTM** network with an **Attention** layer to handle time-series patterns and focus on the most relevant timesteps.
-
-- **Technical Indicators:**  
-  - **RSI (Relative Strength Index)**  
-  - **SMA (Simple Moving Average)**  
-
-- **Deployment:**  
-  The trained model is served via a **FastAPI** endpoint for real-time predictions.
+**MOEX Price Prediction** is designed to forecast stock prices (e.g., SBER) by combining historical market data with technical indicators like RSI and SMA. The project uses a PyTorch-based model (incorporating LSTM with an Attention mechanism) to generate predictions, which are then served through a REST API built with FastAPI.
 
 ---
 
-## Project Structure
+## Key Features
 
+- **End-to-End Pipeline:** Covers data fetching, preprocessing, model training, and API deployment.
+- **Deep Learning Model:** Utilizes a PyTorch model for time-series forecasting.
+- **Real-time Predictions:** FastAPI offers a RESTful interface for instant predictions.
+- **Interactive Visualization:** Includes training graphs to monitor model performance.
+
+---
+
+## Architecture and Structure
 
 ```plaintext
 MOEX_PREDICT/
 ├── app/
 │   ├── __init__.py
-│   ├── data.py            # Data fetching from MOEX & CBR
+│   ├── data.py            # Data fetching from MOEX and CBR
 │   ├── main.py            # FastAPI entry point
-│   ├── model_manager.py   # Model/scaler loading utilities
-│   ├── models.py          # PyTorch model (LSTM + Attention)
-│   ├── optimization.py    # (Optional) Hyperparameter optimization
+│   ├── model_manager.py   # Model and scaler loading utilities
+│   ├── models.py          # PyTorch model definition (LSTM + Attention)
 │   ├── predict.py         # Prediction logic using the trained model
-│   ├── preprocessing.py   # Preprocessing (RSI, SMA, fill NaN, etc.)
+│   ├── preprocessing.py   # Data preprocessing, RSI, SMA calculation, etc.
 │   └── training.py        # Model training script
 ├── models/
 │   ├── SBER_model.pth     # Saved PyTorch model weights
 │   ├── SBER_scaler_X.pkl  # MinMaxScaler for input features
 │   └── SBER_scaler_y.pkl  # MinMaxScaler for target
 ├── notebooks/
-│   ├── Best_SBER.ipynb        # Jupyter notebook with best SBER model exploration
-│   └── TestBuild_tickers.ipynb# Additional experiments / analysis
-└── README.md               # Project documentation (this file)
+│   └── Best_SBER.ipynb    # Notebook for model analysis and experiments
+└── README.md              # Project documentation (this file)
 ```
----
-
-## Key Components
-
-1. **`app/training.py`:**  
-   - Trains the LSTM+Attention model on historical data  
-   - Scales features and target using `MinMaxScaler`  
-   - Saves the trained model (`.pth`) and scalers (`.pkl`)  
-
-2. **`app/main.py`:**  
-   - Defines the FastAPI application  
-   - Handles requests to `/predict`  
-   - Merges data from MOEX & CBR, applies the same preprocessing pipeline  
-
-3. **`app/model_manager.py`:**  
-   - Loads the saved model and scalers into memory  
-   - Used by the API to perform inference  
-
-4. **`models/SBER_model.pth`:**  
-   - The trained PyTorch model weights for the SBER ticker  
 
 ---
 
-## Installation
+## Technologies and Tools
 
-### Prerequisites
-
-- **Python 3.8+**  
-- **PyTorch** (e.g., version 1.10+)  
-- **FastAPI** (e.g., version 0.95+)  
-- **uvicorn** (for running the server)  
-- Additional dependencies: `pandas`, `numpy`, `scikit-learn`, `matplotlib`, etc.
-
-### Steps
-
-1. **Clone the Repository**  
-   ```bash
-   git clone https://github.com/your_username/MOEX_PREDICT.git
-   cd MOEX_PREDICT
-   ```
-
-2. **Create and Activate a Virtual Environment**  
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # Windows: venv\Scripts\activate
-   ```
-
-3. **Install Dependencies**  
-   ```bash
-   pip install -r requirements.txt
-   ```
+- **Programming Language:** Python 3.8+
+- **Deep Learning Framework:** PyTorch
+- **Web Framework:** FastAPI (with Uvicorn)
+- **Data Analysis Libraries:** Pandas, NumPy, scikit-learn
+- **Visualization:** Matplotlib, Seaborn
+- **Version Control:** Git and GitHub
 
 ---
 
-## Model Training
+## Installation and Setup
 
-Train the model and generate the `.pth` and `.pkl` files:
+### Step 1. Clone the Repository
+
+```bash
+git clone https://github.com/your_username/MOEX_PREDICT.git
+cd MOEX_PREDICT
+```
+
+### Step 2. Create a Virtual Environment
+
+```bash
+python -m venv venv
+source venv/bin/activate   # On Windows: venv\Scripts\activate
+```
+
+### Step 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 4. Train the Model
+
+Run the training script to generate the model and scaler files:
 
 ```bash
 python app/training.py
 ```
 
-- **Outputs:**  
-  - `SBER_model.pth`  
-  - `SBER_scaler_X.pkl`  
-  - `SBER_scaler_y.pkl`  
+This process creates:
+- `models/SBER_model.pth`
+- `models/SBER_scaler_X.pkl`
+- `models/SBER_scaler_y.pkl`
 
-These artifacts are essential for the FastAPI server to perform predictions.
-
----
-
-## Running the FastAPI App
-
-Once the model is trained and saved, you can launch the FastAPI server:
+### Step 5. Run the FastAPI Application
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-- **Default URL:** [http://127.0.0.1:8000](http://127.0.0.1:8000)  
-- **Interactive Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for interactive testing.
 
 ---
 
-## API Usage
+## Model Training and Visualization
 
-### Endpoint
+Below is the PyTorch model training graph, illustrating the model's convergence and performance:
 
-**`POST /predict`**
+![image](https://github.com/user-attachments/assets/86143f3d-8d0d-4b60-b031-41b9affc9882)
 
-### Request Payload
+
+*Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
+### PyTorch Model Training Results
+  | Performance Metrics | Validation Accuracy |
+  |---------------------|---------------------|
+  | MSE (RUB^2):        | 63.874              |
+  | RMSE (RUB):         | 7.992               |
+  | MAE (RUB):          | 5.541               |
+  | MAPE:               | 2.44%               |
+
+---
+
+## API and Demo
+
+### Example API Request
+
+**Endpoint:** `POST /predict`
+
+**Sample Request:**
 
 ```json
 {
@@ -163,11 +149,8 @@ uvicorn app.main:app --reload
   "end_date": "2025-03-28"
 }
 ```
-- `ticker`: Stock symbol, e.g. `"SBER"`.
-- `start_date`: Start date in `YYYY-MM-DD` format.
-- `end_date`: End date in `YYYY-MM-DD` format.
 
-### Response Example
+**Sample Response:**
 
 ```json
 {
@@ -177,19 +160,7 @@ uvicorn app.main:app --reload
 }
 ```
 
-Use the **Swagger UI** at `/docs` for an interactive way to test requests.
-
----
-
-## Notebooks
-
-- **`notebooks/Best_SBER.ipynb`:**  
-  Demonstrates the best model configuration and analysis for SBER.
-
-- **`notebooks/TestBuild_tickers.ipynb`:**  
-  Contains exploratory code to fetch and preprocess multiple tickers.
-
-These notebooks provide additional insights into data exploration, feature engineering, and model experimentation.
+Test the API using the interactive [Swagger UI](http://127.0.0.1:8000/docs).
 
 ---
 
