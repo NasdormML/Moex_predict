@@ -11,12 +11,13 @@ def load_models():
     scaler_y_path = os.path.join("models", f"{ticker}_scaler_y.pkl")
     
     if os.path.exists(model_path) and os.path.exists(scaler_X_path) and os.path.exists(scaler_y_path):
+        # Задаём гиперпараметры, соответствующие финальному обучению
         seq_length = 20
         num_features = 9  # Признаки: OPEN, HIGH, LOW, CLOSE, VOL, CLOSE_IMOEX, CLOSE_USD, RSI, SMA
         output_dim = 1
-        lstm_units = 150
-        fc_units = 64
-        dropout_rate = 0.15
+        lstm_units = 196
+        fc_units = 151
+        dropout_rate = 0.13351299266216415
         
         model = PricePredictionModel(seq_length, num_features, output_dim, lstm_units, fc_units, dropout_rate)
         model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
