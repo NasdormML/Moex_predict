@@ -127,10 +127,10 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ### PyTorch Model Training Results
   | Performance Metrics | Validation Accuracy |
   |---------------------|---------------------|
-  | MSE (RUB^2):        | 63.874              |
-  | RMSE (RUB):         | 7.992               |
-  | MAE (RUB):          | 5.541               |
-  | MAPE:               | 2.44%               |
+  | MSE (RUB^2):        | 48.849              |
+  | RMSE (RUB):         | 6.989               |
+  | MAE (RUB):          | 5.377               |
+  | MAPE:               | 2.08%               |
 
 ---
 
@@ -145,8 +145,8 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ```json
 {
   "ticker": "SBER",
-  "start_date": "2025-03-27",
-  "end_date": "2025-03-28"
+  "start_date": "2025-02-27",
+  "end_date": "2025-03-30"
 }
 ```
 
@@ -155,8 +155,8 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ```json
 {
   "ticker": "SBER",
-  "predicted_price": 230.45,
-  "date": "2025-03-28"
+  "predicted_price": 310.77154541015625,
+  "date": "2025-03-30"
 }
 ```
 
