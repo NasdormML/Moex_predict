@@ -120,8 +120,7 @@ Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for i
 
 Below is the PyTorch model training graph, illustrating the model's convergence and performance:
 
-![image](https://github.com/user-attachments/assets/86143f3d-8d0d-4b60-b031-41b9affc9882)
-
+![image](https://github.com/user-attachments/assets/9418a732-f4d2-4e9d-9522-86d33856a6f9)
 
 *Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
 ### PyTorch Model Training Results
