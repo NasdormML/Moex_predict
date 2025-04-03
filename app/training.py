@@ -87,7 +87,7 @@ if __name__ == "__main__":
     targets = merged_df[[target_col]].values.astype(float)
     
     total_len = len(data)
-    train_end = int(0.6 * total_len)
+    train_end = int(0.8 * total_len)
     train_data = data[:train_end]
     test_data = data[train_end:]
     train_targets = targets[:train_end]
