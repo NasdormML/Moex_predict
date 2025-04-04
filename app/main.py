@@ -10,10 +10,11 @@ from app.data import fetch_moex_eod_data, fetch_cbr_usd_rate
 from app.preprocessing import preprocess_data
 from app.predict import predict_price
 from app.model_manager import load_models
+from app.transfer_learning import retrain_model, load_training_metadata
 
 app = FastAPI(title="MOEX Price Prediction API")
 
-# Загрузка сохранённой модели (для тикера SBER)
+# Загружаем сохранённые модели (например, для тикера SBER)
 models_dict = load_models()
 
 class PredictionRequest(BaseModel):
@@ -31,20 +32,37 @@ def predict(request: PredictionRequest):
     if ticker not in models_dict:
         raise HTTPException(status_code=404, detail=f"Модель для тикера {ticker} не найдена")
     
+    # Разбор дат из запроса
     try:
         req_start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
         req_end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=422, detail="Неверный формат даты. Используйте 'YYYY-MM-DD'")
     
-    # Загружаем данные SBER и IMOEX с MOEX
+    # Получаем метаданные о последнем обучении (если они есть)
+    metadata = load_training_metadata()
+    # Если метаданных для тикера нет, используем значение по умолчанию
+    last_train_str = metadata.get(ticker, "2023-04-01")
+    last_train_date = datetime.strptime(last_train_str, "%Y-%m-%d").date()
+    
+    # Если запрошенная дата больше последней обученной более чем на 7 дней – запускаем дообучение
+    if (req_end - last_train_date).days > 7:
+        print("Запуск процесса дообучения модели для", ticker)
+        models_dict[ticker] = retrain_model(
+            ticker,
+            datetime.combine(last_train_date, datetime.min.time()),
+            datetime.combine(req_end, datetime.min.time()),
+            models_dict[ticker]
+        )
+    
+    # Загрузка данных SBER и IMOEX с MOEX
     df_sber = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
     df_imoex = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
     
-    # Загружаем данные USD с MOEX
+    # Загрузка данных USD с MOEX
     df_usd = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
     
-    # Если MOEX не вернул данные по USD или они неполные – заполняем их курсом ЦБ РФ
+    # Если USD-данные неполные, заполняем их данными с ЦБ РФ
     dates = pd.date_range(start=request.start_date, end=request.end_date)
     if df_usd is None or df_usd.empty or 'CLOSE' not in df_usd.columns:
         usd_rates = [fetch_cbr_usd_rate(d) for d in dates]
@@ -64,6 +82,7 @@ def predict(request: PredictionRequest):
     if (df_imoex is None or df_imoex.empty) or (df_usd is None or df_usd.empty):
         raise HTTPException(status_code=404, detail="Данные для дополнительных индикаторов не найдены")
     
+    # Приводим столбцы к единому регистру и нормализуем дату
     df_sber.columns = [col.upper() for col in df_sber.columns]
     df_imoex.columns = [col.upper() for col in df_imoex.columns]
     df_usd.columns = [col.upper() for col in df_usd.columns]
@@ -86,6 +105,7 @@ def predict(request: PredictionRequest):
     df_imoex = process_tradedate(df_imoex)
     df_usd = process_tradedate(df_usd)
     
+    # Объединяем данные по дате
     merged_df = df_sber.merge(
         df_imoex[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_IMOEX"}),
         on="TRADEDATE", how="left"
@@ -98,8 +118,10 @@ def predict(request: PredictionRequest):
     merged_df['CLOSE_USD'] = merged_df['CLOSE_USD'].ffill().bfill()
     merged_df.reset_index(drop=True, inplace=True)
     
+    # Предобработка данных
     df_processed = preprocess_data(merged_df, ticker)
     
+    # Выбираем необходимые признаки
     features = [
         f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
         "CLOSE_IMOEX", "CLOSE_USD", f"RSI_{ticker}", f"SMA_{ticker}"
@@ -113,9 +135,15 @@ def predict(request: PredictionRequest):
     if data.shape[0] < seq_length:
         raise HTTPException(status_code=422, detail=f"Недостаточно данных. Требуется минимум {seq_length} записей, получено {data.shape[0]}")
     
-    model_info = models_dict[ticker]
+    # Предсказание цены закрытия
     try:
-        prediction = predict_price(model_info["model"], model_info["scaler_X"], model_info["scaler_y"], data, seq_length=seq_length)
+        prediction = predict_price(
+            models_dict[ticker]["model"],
+            models_dict[ticker]["scaler_X"],
+            models_dict[ticker]["scaler_y"],
+            data,
+            seq_length=seq_length
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
