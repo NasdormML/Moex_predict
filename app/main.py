@@ -118,10 +118,9 @@ def predict(request: PredictionRequest):
     if merged_df.shape[0] < 20:
         raise HTTPException(status_code=422, detail=f"Недостаточно данных после объединения: получено {merged_df.shape[0]} строк, требуется минимум 20.")
     
-    # Предобработка: вычисляем технические индикаторы так, чтобы имена совпадали с обучением
+    # Предобработка: вычисляем технические индикаторы
     df_processed = preprocess_data(merged_df, ticker)
-    
-    # Список признаков, как в ноутбуке (18 признаков)
+
     features = [
         "OPEN_SBER", "HIGH_SBER", "LOW_SBER", "CLOSE_SBER", "VOL_SBER",
         "CLOSE_IMOEX", "CLOSE_USD",

@@ -49,8 +49,6 @@ def compute_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
 
 def preprocess_data(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df = df.copy()
-    # Здесь предполагается, что базовые столбцы уже переименованы (например, OPEN_SBER, CLOSE_SBER и т.д.)
-    # Вычисляем технические индикаторы так, как в ноутбуке (без добавления суффиксов)
     df['RSI'] = compute_rsi(df[f"CLOSE_{ticker}"])
     df['SMA_RETURNS'] = compute_log_returns(compute_sma(df[f"CLOSE_{ticker}"]))
     df['VOLATILITY'] = compute_volatility(df[f"CLOSE_{ticker}"])
