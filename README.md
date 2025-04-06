@@ -120,9 +120,10 @@ Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for i
 
 Below is the PyTorch model training graph, illustrating the model's convergence and performance:
 
+*Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
+
 ![image](https://github.com/user-attachments/assets/9418a732-f4d2-4e9d-9522-86d33856a6f9)
 
-*Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
 ### PyTorch Model Training Results
   | Performance Metrics | Validation Accuracy |
   |---------------------|---------------------|
@@ -130,6 +131,19 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
   | RMSE (RUB):         | 6.989               |
   | MAE (RUB):          | 5.377               |
   | MAPE:               | 2.08%               |
+
+
+# Updated version with more features
+
+![image](https://github.com/user-attachments/assets/9ba4079f-85e3-4824-83dc-78e2757a339d)
+
+### PyTorch Model Training Results
+  | Performance Metrics | Validation Accuracy |
+  |---------------------|---------------------|
+  | MSE (RUB^2):        | 35.699              |
+  | RMSE (RUB):         | 5.975               |
+  | MAE (RUB):          | 4.589               |
+  | MAPE:               | 1.74%               |
 
 ---
 
@@ -144,8 +158,8 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ```json
 {
   "ticker": "SBER",
-  "start_date": "2025-02-27",
-  "end_date": "2025-03-30"
+  "start_date": "2025-03-01",
+  "end_date": "2025-04-05"
 }
 ```
 
@@ -154,8 +168,8 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ```json
 {
   "ticker": "SBER",
-  "predicted_price": 310.77154541015625,
-  "date": "2025-03-30"
+  "predicted_price": 297.791015625,
+  "date": "2025-04-06"
 }
 ```
 
