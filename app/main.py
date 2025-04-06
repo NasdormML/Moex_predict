@@ -1,26 +1,38 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
-import numpy as np
 import math
-from datetime import datetime, date
+from datetime import datetime
 import pandas as pd
 
 from app.data import fetch_moex_eod_data, fetch_cbr_usd_rate
-from app.preprocessing import preprocess_data
+from app.preprocessing import preprocess_data, SMA_WINDOW
 from app.predict import predict_price
 from app.model_manager import load_models
 from app.transfer_learning import retrain_model, load_training_metadata
 
 app = FastAPI(title="MOEX Price Prediction API")
 
-# Загружаем сохранённые модели (например, для тикера SBER)
+# Загружаем сохранённую модель (например, для тикера SBER)
 models_dict = load_models()
 
 class PredictionRequest(BaseModel):
     ticker: str
     start_date: str
     end_date: str
+
+def process_tradedate(df):
+    # Приведение даты к единому формату
+    if "BEGIN" in df.columns:
+        df["TRADEDATE"] = pd.to_datetime(df["BEGIN"])
+    elif "TRADETIME" in df.columns:
+        df["TRADEDATE"] = pd.to_datetime(df["TRADETIME"])
+    elif "TRADEDATE" in df.columns:
+        df["TRADEDATE"] = pd.to_datetime(df["TRADEDATE"])
+    else:
+        raise ValueError("Не найден столбец с датой")
+    df["TRADEDATE"] = df["TRADEDATE"].dt.normalize()
+    return df
 
 @app.get("/")
 def read_root():
@@ -39,15 +51,14 @@ def predict(request: PredictionRequest):
     except ValueError:
         raise HTTPException(status_code=422, detail="Неверный формат даты. Используйте 'YYYY-MM-DD'")
     
-    # Получаем метаданные о последнем обучении (если они есть)
+    # Получаем метаданные о последнем обучении
     metadata = load_training_metadata()
-    # Если метаданных для тикера нет, используем значение по умолчанию
-    last_train_str = metadata.get(ticker, "2023-04-01")
+    last_train_str = metadata.get(ticker, "2025-04-01")
     last_train_date = datetime.strptime(last_train_str, "%Y-%m-%d").date()
     
-    # Если запрошенная дата больше последней обученной более чем на 7 дней – запускаем дообучение
+    # Если конечная дата запроса превышает последнюю тренировку более чем на 7 дней – запускаем дообучение
     if (req_end - last_train_date).days > 7:
-        print("Запуск процесса дообучения модели для", ticker)
+        print("Запуск дообучения для", ticker)
         models_dict[ticker] = retrain_model(
             ticker,
             datetime.combine(last_train_date, datetime.min.time()),
@@ -55,14 +66,12 @@ def predict(request: PredictionRequest):
             models_dict[ticker]
         )
     
-    # Загрузка данных SBER и IMOEX с MOEX
+    # Получаем данные с MOEX для тикера и дополнительных индикаторов
     df_sber = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
     df_imoex = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
-    
-    # Загрузка данных USD с MOEX
     df_usd = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
     
-    # Если USD-данные неполные, заполняем их данными с ЦБ РФ
+    # Если для USD нет данных, заполняем их с ЦБ РФ
     dates = pd.date_range(start=request.start_date, end=request.end_date)
     if df_usd is None or df_usd.empty or 'CLOSE' not in df_usd.columns:
         usd_rates = [fetch_cbr_usd_rate(d) for d in dates]
@@ -71,60 +80,54 @@ def predict(request: PredictionRequest):
         df_usd["TRADEDATE"] = pd.to_datetime(df_usd["TRADEDATE"]).dt.normalize()
         df_usd.sort_values("TRADEDATE", inplace=True)
         df_usd.reset_index(drop=True, inplace=True)
-        df_usd_full = pd.DataFrame({"TRADEDATE": dates})
-        df_usd = df_usd_full.merge(df_usd, on="TRADEDATE", how="left")
-        missing_mask = df_usd["CLOSE"].isna()
-        if missing_mask.any():
-            df_usd.loc[missing_mask, "CLOSE"] = [fetch_cbr_usd_rate(d) for d in df_usd.loc[missing_mask, "TRADEDATE"]]
     
-    if df_sber is None or df_sber.empty:
-        raise HTTPException(status_code=404, detail=f"Данные для тикера {ticker} не найдены")
-    if (df_imoex is None or df_imoex.empty) or (df_usd is None or df_usd.empty):
-        raise HTTPException(status_code=404, detail="Данные для дополнительных индикаторов не найдены")
-    
-    # Приводим столбцы к единому регистру и нормализуем дату
-    df_sber.columns = [col.upper() for col in df_sber.columns]
-    df_imoex.columns = [col.upper() for col in df_imoex.columns]
-    df_usd.columns = [col.upper() for col in df_usd.columns]
-    
-    def process_tradedate(df):
-        if "BEGIN" in df.columns:
-            df["TRADEDATE"] = pd.to_datetime(df["BEGIN"])
-        elif "TRADETIME" in df.columns:
-            df["TRADEDATE"] = pd.to_datetime(df["TRADETIME"])
-        elif "TRADEDATE" in df.columns:
-            df["TRADEDATE"] = pd.to_datetime(df["TRADEDATE"])
-        else:
-            raise ValueError("Не найден столбец с датой")
-        df["TRADEDATE"] = df["TRADEDATE"].dt.normalize()
-        df.sort_values("TRADEDATE", inplace=True)
-        df.reset_index(drop=True, inplace=True)
-        return df
-    
+    # Приводим столбцы с датой к единому формату
     df_sber = process_tradedate(df_sber)
     df_imoex = process_tradedate(df_imoex)
-    df_usd = process_tradedate(df_usd)
+    df_usd   = process_tradedate(df_usd)
+    
+    # Переименовываем столбцы для SBER, IMOEX и USD (как в ноутбуке)
+    df_sber.rename(columns={
+        "OPEN": "OPEN_SBER",
+        "HIGH": "HIGH_SBER",
+        "LOW": "LOW_SBER",
+        "CLOSE": "CLOSE_SBER",
+        "VOLUME": "VOL_SBER"
+    }, inplace=True)
+    df_imoex.rename(columns={"CLOSE": "CLOSE_IMOEX"}, inplace=True)
+    df_usd.rename(columns={"CLOSE": "CLOSE_USD"}, inplace=True)
+    
+    # Отбираем необходимые столбцы перед объединением
+    df_sber = df_sber[["TRADEDATE", "OPEN_SBER", "HIGH_SBER", "LOW_SBER", "CLOSE_SBER", "VOL_SBER"]]
+    df_imoex = df_imoex[["TRADEDATE", "CLOSE_IMOEX"]]
+    df_usd   = df_usd[["TRADEDATE", "CLOSE_USD"]]
     
     # Объединяем данные по дате
-    merged_df = df_sber.merge(
-        df_imoex[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_IMOEX"}),
-        on="TRADEDATE", how="left"
-    ).merge(
-        df_usd[["TRADEDATE", "CLOSE"]].rename(columns={"CLOSE": "CLOSE_USD"}),
-        on="TRADEDATE", how="left"
-    )
-    
-    merged_df['CLOSE_IMOEX'] = merged_df['CLOSE_IMOEX'].ffill().bfill()
-    merged_df['CLOSE_USD'] = merged_df['CLOSE_USD'].ffill().bfill()
+    merged_df = pd.merge(df_sber, df_imoex, on="TRADEDATE", how="outer")
+    merged_df = pd.merge(merged_df, df_usd, on="TRADEDATE", how="outer")
+    merged_df.sort_values("TRADEDATE", inplace=True)
     merged_df.reset_index(drop=True, inplace=True)
     
-    # Предобработка данных
-    df_processed = preprocess_data(merged_df, ticker)
+    # Удаляем строки, где отсутствуют ключевые значения
+    merged_df.dropna(subset=["CLOSE_SBER", "CLOSE_IMOEX", "CLOSE_USD"], inplace=True)
+    merged_df.reset_index(drop=True, inplace=True)
     
-    # Выбираем необходимые признаки
+    # Для отладки – вывод количества записей после объединения
+    print(f"Количество записей после объединения: {merged_df.shape[0]}")
+    
+    if merged_df.shape[0] < 20:
+        raise HTTPException(status_code=422, detail=f"Недостаточно данных после объединения: получено {merged_df.shape[0]} строк, требуется минимум 20.")
+    
+    # Предобработка: вычисляем технические индикаторы
+    df_processed = preprocess_data(merged_df, ticker)
+
     features = [
-        f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
-        "CLOSE_IMOEX", "CLOSE_USD", f"RSI_{ticker}", f"SMA_{ticker}"
+        "OPEN_SBER", "HIGH_SBER", "LOW_SBER", "CLOSE_SBER", "VOL_SBER",
+        "CLOSE_IMOEX", "CLOSE_USD",
+        "RSI", "SMA_RETURNS", "VOLATILITY", "LOG_RETURNS",
+        "MACD_LINE", "MACD_SIGNAL", "MACD_HIST",
+        "BB_UPPER", "BB_LOWER", "BB_MIDDLE",
+        "ATR"
     ]
     missing = [col for col in features if col not in df_processed.columns]
     if missing:
@@ -133,9 +136,8 @@ def predict(request: PredictionRequest):
     data = df_processed[features].values.astype(float)
     seq_length = 20
     if data.shape[0] < seq_length:
-        raise HTTPException(status_code=422, detail=f"Недостаточно данных. Требуется минимум {seq_length} записей, получено {data.shape[0]}")
+        raise HTTPException(status_code=422, detail=f"Недостаточно данных после предобработки. Требуется минимум {seq_length} записей, получено {data.shape[0]}")
     
-    # Предсказание цены закрытия
     try:
         prediction = predict_price(
             models_dict[ticker]["model"],

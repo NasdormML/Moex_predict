@@ -19,8 +19,7 @@ class AttentionLayer(nn.Module):
         e = e.squeeze(-1)  # (batch, timesteps)
         alpha = torch.softmax(e, dim=1)  # (batch, timesteps)
         alpha = alpha.unsqueeze(-1)  # (batch, timesteps, 1)
-        context = x * alpha  # (batch, timesteps, hidden_dim)
-        context = torch.sum(context, dim=1)  # (batch, hidden_dim)
+        context = torch.sum(x * alpha, dim=1)
         return context
 
 class PricePredictionModel(nn.Module):
@@ -34,7 +33,6 @@ class PricePredictionModel(nn.Module):
         self.fc2 = nn.Linear(fc_units, output_dim)
     
     def forward(self, x):
-        # x: (batch, seq_length, num_features)
         lstm_out, _ = self.lstm(x)
         x = self.dropout(lstm_out)
         attn_out = self.attention(x)

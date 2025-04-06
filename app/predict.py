@@ -12,6 +12,7 @@ def predict_price(model, scaler_X, scaler_y, data, seq_length=20):
     sequence_scaled = scaler_X.transform(sequence).reshape(1, seq_length, num_features)
     
     sequence_tensor = torch.tensor(sequence_scaled, dtype=torch.float32)
+
     model.eval()
     with torch.no_grad():
         pred_tensor = model(sequence_tensor)

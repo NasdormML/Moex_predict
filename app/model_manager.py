@@ -11,9 +11,9 @@ def load_models():
     scaler_y_path = os.path.join("models", f"{ticker}_scaler_y.pkl")
     
     if os.path.exists(model_path) and os.path.exists(scaler_X_path) and os.path.exists(scaler_y_path):
-        # Задаём гиперпараметры, соответствующие финальному обучению
+        # Параметры, использованные при обучении
         seq_length = 20
-        num_features = 9  # Признаки: OPEN, HIGH, LOW, CLOSE, VOL, CLOSE_IMOEX, CLOSE_USD, RSI, SMA
+        num_features = 18  # число признаков, как в подготовленных данных
         output_dim = 1
         lstm_units = 196
         fc_units = 151
