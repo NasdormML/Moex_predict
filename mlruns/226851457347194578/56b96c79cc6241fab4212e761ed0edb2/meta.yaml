@@ -1,0 +1,15 @@
+artifact_uri: mlflow-artifacts:/226851457347194578/56b96c79cc6241fab4212e761ed0edb2/artifacts
+end_time: 1744030911089
+entry_point_name: ''
+experiment_id: '226851457347194578'
+lifecycle_stage: active
+run_id: 56b96c79cc6241fab4212e761ed0edb2
+run_name: Predict_SBER_20250407_170149
+run_uuid: 56b96c79cc6241fab4212e761ed0edb2
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1744030909912
+status: 3
+tags: []
+user_id: nasdorm
