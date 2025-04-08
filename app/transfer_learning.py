@@ -47,7 +47,6 @@ def retrain_model(ticker, last_train_datetime, new_end_datetime, current_model_b
         print("Недостаточно данных для дообучения.")
         return current_model_bundle
     
-    # Для примера используем последние seq_length записей как обучающую последовательность
     X_train = data[-seq_length:]
     # Целевая переменная – последняя цена закрытия SBER
     y_train = data[-1][features.index("CLOSE_SBER")]
@@ -62,7 +61,7 @@ def retrain_model(ticker, last_train_datetime, new_end_datetime, current_model_b
     X_train_tensor = torch.tensor(X_train.reshape(1, seq_length, -1), dtype=torch.float32)
     y_train_tensor = torch.tensor([[y_train]], dtype=torch.float32)
     
-    epochs = 5  # число эпох дообучения
+    epochs = 10
     for epoch in range(epochs):
         optimizer.zero_grad()
         pred = model(X_train_tensor)

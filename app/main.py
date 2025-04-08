@@ -14,11 +14,11 @@ from app.transfer_learning import retrain_model, load_training_metadata
 
 app = FastAPI(title="MOEX Price Prediction API")
 
-# Настройка MLflow Tracking: убедитесь, что MLflow UI запущен на указанном порту (например, 5002)
+# Настройка MLflow Tracking
 mlflow.set_tracking_uri("http://127.0.0.1:5001")
 mlflow.set_experiment("MOEX_Price_Prediction")
 
-# Загружаем сохранённую модель (например, для тикера SBER)
+# Загружаем сохранённую модель
 models_dict = load_models()
 
 class PredictionRequest(BaseModel):
