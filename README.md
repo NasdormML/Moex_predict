@@ -112,6 +112,12 @@ This process creates:
 - `models/SBER_scaler_y.pkl`
 
 ### Step 5. Run the FastAPI Application
+Start MLflow server.
+
+```bash
+mlflow ui --port 5001
+```
+Booting FastAPI:
 
 ```bash
 uvicorn app.main:app --reload
