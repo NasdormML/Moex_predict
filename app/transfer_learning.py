@@ -26,7 +26,6 @@ def retrain_model(ticker, last_train_datetime, new_end_datetime, current_model_b
         return current_model_bundle
 
     # Переименование столбцов для тикера
-    # Это необходимо, чтобы в DataFrame появились столбцы вида "OPEN_<ticker>", "CLOSE_<ticker>" и т.д.
     df_new.rename(columns={
         "OPEN": f"OPEN_{ticker}",
         "HIGH": f"HIGH_{ticker}",
@@ -35,7 +34,6 @@ def retrain_model(ticker, last_train_datetime, new_end_datetime, current_model_b
         "VOLUME": f"VOL_{ticker}"
     }, inplace=True)
     
-    # Обработка данных – теперь ожидается, что в DataFrame присутствуют нужные имена столбцов
     df_new_processed = preprocess_data(df_new, ticker)
     
     features = [
