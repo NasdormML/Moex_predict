@@ -38,33 +38,33 @@ def compute_bollinger_bands(series: pd.Series, window=20, num_std=2):
     lower_band = sma - (std * num_std)
     return upper_band, lower_band, sma
 
-def compute_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
-    # Ожидаем, что для тикера SBER столбцы уже называются: HIGH_SBER, LOW_SBER, CLOSE_SBER
-    high_low = df["HIGH_SBER"] - df["LOW_SBER"]
-    high_prev_close = np.abs(df["HIGH_SBER"] - df["CLOSE_SBER"].shift(1))
-    low_prev_close = np.abs(df["LOW_SBER"] - df["CLOSE_SBER"].shift(1))
+def compute_atr(df: pd.DataFrame, ticker: str, window: int = 14) -> pd.Series:
+    high_low = df[f"HIGH_{ticker}"] - df[f"LOW_{ticker}"]
+    high_prev_close = np.abs(df[f"HIGH_{ticker}"] - df[f"CLOSE_{ticker}"].shift(1))
+    low_prev_close = np.abs(df[f"LOW_{ticker}"] - df[f"CLOSE_{ticker}"].shift(1))
     true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(axis=1)
     atr = true_range.rolling(window=window).mean()
     return atr
 
 def preprocess_data(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df = df.copy()
-    df['RSI'] = compute_rsi(df[f"CLOSE_{ticker}"])
-    df['SMA_RETURNS'] = compute_log_returns(compute_sma(df[f"CLOSE_{ticker}"]))
-    df['VOLATILITY'] = compute_volatility(df[f"CLOSE_{ticker}"])
-    df['LOG_RETURNS'] = compute_log_returns(df[f"CLOSE_{ticker}"])
+    close_col = f"CLOSE_{ticker}"
+    df['RSI'] = compute_rsi(df[close_col])
+    df['SMA_RETURNS'] = compute_log_returns(compute_sma(df[close_col]))
+    df['VOLATILITY'] = compute_volatility(df[close_col])
+    df['LOG_RETURNS'] = compute_log_returns(df[close_col])
     
-    macd_line, macd_signal, macd_hist = compute_macd(df[f"CLOSE_{ticker}"])
+    macd_line, macd_signal, macd_hist = compute_macd(df[close_col])
     df['MACD_LINE'] = macd_line
     df['MACD_SIGNAL'] = macd_signal
     df['MACD_HIST'] = macd_hist
     
-    bb_upper, bb_lower, bb_middle = compute_bollinger_bands(df[f"CLOSE_{ticker}"])
+    bb_upper, bb_lower, bb_middle = compute_bollinger_bands(df[close_col])
     df['BB_UPPER'] = bb_upper
     df['BB_LOWER'] = bb_lower
     df['BB_MIDDLE'] = bb_middle
     
-    df['ATR'] = compute_atr(df, window=SMA_WINDOW)
+    df['ATR'] = compute_atr(df, ticker, window=SMA_WINDOW)
 
     # Заполняем пропуски вперёд и назад, затем удаляем оставшиеся NaN
     df = df.ffill().bfill().dropna().reset_index(drop=True)

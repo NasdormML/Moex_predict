@@ -1,0 +1,15 @@
+artifact_uri: mlflow-artifacts:/803329896367094526/b73c769a23954a26b941c9da0efa454a/artifacts
+end_time: 1744538541537
+entry_point_name: ''
+experiment_id: '803329896367094526'
+lifecycle_stage: active
+run_id: b73c769a23954a26b941c9da0efa454a
+run_name: Predict_GAZP_20250413_140221
+run_uuid: b73c769a23954a26b941c9da0efa454a
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1744538541166
+status: 4
+tags: []
+user_id: nasdorm

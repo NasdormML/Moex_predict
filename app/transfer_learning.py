@@ -24,17 +24,27 @@ def retrain_model(ticker, last_train_datetime, new_end_datetime, current_model_b
     if df_new is None or df_new.empty:
         print("Нет новых данных для дообучения.")
         return current_model_bundle
+
+    # Переименование столбцов для тикера
+    # Это необходимо, чтобы в DataFrame появились столбцы вида "OPEN_<ticker>", "CLOSE_<ticker>" и т.д.
+    df_new.rename(columns={
+        "OPEN": f"OPEN_{ticker}",
+        "HIGH": f"HIGH_{ticker}",
+        "LOW": f"LOW_{ticker}",
+        "CLOSE": f"CLOSE_{ticker}",
+        "VOLUME": f"VOL_{ticker}"
+    }, inplace=True)
     
-    # Обработка данных
+    # Обработка данных – теперь ожидается, что в DataFrame присутствуют нужные имена столбцов
     df_new_processed = preprocess_data(df_new, ticker)
     
     features = [
-        "OPEN_SBER", "HIGH_SBER", "LOW_SBER", "CLOSE_SBER", "VOL_SBER",
-        "CLOSE_IMOEX", "CLOSE_USD",
-        "RSI", "SMA_RETURNS", "VOLATILITY", "LOG_RETURNS",
-        "MACD_LINE", "MACD_SIGNAL", "MACD_HIST",
-        "BB_UPPER", "BB_LOWER", "BB_MIDDLE",
-        "ATR"
+         f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
+         "CLOSE_IMOEX", "CLOSE_USD",
+         "RSI", "SMA_RETURNS", "VOLATILITY", "LOG_RETURNS",
+         "MACD_LINE", "MACD_SIGNAL", "MACD_HIST",
+         "BB_UPPER", "BB_LOWER", "BB_MIDDLE",
+         "ATR"
     ]
     missing = [col for col in features if col not in df_new_processed.columns]
     if missing:
@@ -48,10 +58,8 @@ def retrain_model(ticker, last_train_datetime, new_end_datetime, current_model_b
         return current_model_bundle
     
     X_train = data[-seq_length:]
-    # Целевая переменная – последняя цена закрытия SBER
-    y_train = data[-1][features.index("CLOSE_SBER")]
-    
-    # Дообучение модели (простой пример)
+    # Целевая переменная – последняя цена закрытия для тикера
+    y_train = data[-1][features.index(f"CLOSE_{ticker}")]
     model = current_model_bundle["model"]
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)

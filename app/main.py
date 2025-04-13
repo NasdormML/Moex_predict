@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import uvicorn
@@ -14,19 +15,19 @@ from app.transfer_learning import retrain_model, load_training_metadata
 
 app = FastAPI(title="MOEX Price Prediction API")
 
-# Настройка MLflow Tracking
+# Настройка MLflow
 mlflow.set_tracking_uri("http://127.0.0.1:5001")
 mlflow.set_experiment("MOEX_Price_Prediction")
 
-# Загружаем сохранённую модель
+# Загрузка моделей для разных тикеров
 models_dict = load_models()
 
 class PredictionRequest(BaseModel):
     ticker: str
-    start_date: str
-    end_date: str
+    start_date: str  # формата "YYYY-MM-DD"
+    end_date: str    # формата "YYYY-MM-DD"
 
-def process_tradedate(df):
+def process_tradedate(df: pd.DataFrame) -> pd.DataFrame:
     # Приведение даты к единому формату
     if "BEGIN" in df.columns:
         df["TRADEDATE"] = pd.to_datetime(df["BEGIN"])
@@ -49,7 +50,7 @@ def predict(request: PredictionRequest):
     if ticker not in models_dict:
         raise HTTPException(status_code=404, detail=f"Модель для тикера {ticker} не найдена")
     
-    # Разбор дат из запроса
+    # Парсинг дат запроса
     try:
         req_start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
         req_end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
@@ -61,12 +62,12 @@ def predict(request: PredictionRequest):
         mlflow.log_param("start_date", request.start_date)
         mlflow.log_param("end_date", request.end_date)
         
-        # Получаем метаданные о последнем обучении
+        # Получаем дату последнего обучения
         metadata = load_training_metadata()
         last_train_str = metadata.get(ticker, "2025-04-01")
         last_train_date = datetime.strptime(last_train_str, "%Y-%m-%d").date()
         
-        # Если конечная дата запроса превышает последнюю тренировку более чем на 7 дней – запускаем дообучение
+        # Если запрос идёт позже последней тренировки более чем на 7 дней, запускаем дообучение
         if (req_end - last_train_date).days > 7:
             mlflow.log_param("retraining_trigger", True)
             mlflow.log_param("last_train_date", last_train_str)
@@ -80,12 +81,12 @@ def predict(request: PredictionRequest):
         else:
             mlflow.log_param("retraining_trigger", False)
         
-        # Получаем данные с MOEX для тикера и дополнительных индикаторов
-        df_sber = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
+        # Загрузка данных
+        df_ticker = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
         df_imoex = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
         df_usd = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
         
-        # Если для USD нет данных, заполняем их с ЦБ РФ
+        # Если данные по USD отсутствуют – получаем их с ЦБ РФ
         dates = pd.date_range(start=request.start_date, end=request.end_date)
         if df_usd is None or df_usd.empty or 'CLOSE' not in df_usd.columns:
             usd_rates = [fetch_cbr_usd_rate(d) for d in dates]
@@ -95,46 +96,44 @@ def predict(request: PredictionRequest):
             df_usd.sort_values("TRADEDATE", inplace=True)
             df_usd.reset_index(drop=True, inplace=True)
         
-        # Приводим столбцы с датой к единому формату
-        df_sber = process_tradedate(df_sber)
+        # Приводим дату к единому формату
+        df_ticker = process_tradedate(df_ticker)
         df_imoex = process_tradedate(df_imoex)
         df_usd   = process_tradedate(df_usd)
         
-        # Переименовываем столбцы для SBER, IMOEX и USD
-        df_sber.rename(columns={
-            "OPEN": "OPEN_SBER",
-            "HIGH": "HIGH_SBER",
-            "LOW": "LOW_SBER",
-            "CLOSE": "CLOSE_SBER",
-            "VOLUME": "VOL_SBER"
+        # Переименование столбцов для тикера, IMOEX и USD
+        df_ticker.rename(columns={
+            "OPEN": f"OPEN_{ticker}",
+            "HIGH": f"HIGH_{ticker}",
+            "LOW": f"LOW_{ticker}",
+            "CLOSE": f"CLOSE_{ticker}",
+            "VOLUME": f"VOL_{ticker}"
         }, inplace=True)
         df_imoex.rename(columns={"CLOSE": "CLOSE_IMOEX"}, inplace=True)
         df_usd.rename(columns={"CLOSE": "CLOSE_USD"}, inplace=True)
         
-        # Отбираем необходимые столбцы перед объединением
-        df_sber = df_sber[["TRADEDATE", "OPEN_SBER", "HIGH_SBER", "LOW_SBER", "CLOSE_SBER", "VOL_SBER"]]
+        # Выбор необходимых столбцов и объединение данных
+        df_ticker = df_ticker[["TRADEDATE", f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}"]]
         df_imoex = df_imoex[["TRADEDATE", "CLOSE_IMOEX"]]
         df_usd   = df_usd[["TRADEDATE", "CLOSE_USD"]]
         
-        # Объединяем данные по дате
-        merged_df = pd.merge(df_sber, df_imoex, on="TRADEDATE", how="outer")
+        merged_df = pd.merge(df_ticker, df_imoex, on="TRADEDATE", how="outer")
         merged_df = pd.merge(merged_df, df_usd, on="TRADEDATE", how="outer")
         merged_df.sort_values("TRADEDATE", inplace=True)
         merged_df.reset_index(drop=True, inplace=True)
         mlflow.log_metric("records_after_merge", merged_df.shape[0])
         
-        # Удаляем строки, где отсутствуют ключевые значения
-        merged_df.dropna(subset=["CLOSE_SBER", "CLOSE_IMOEX", "CLOSE_USD"], inplace=True)
+        merged_df.dropna(subset=[f"CLOSE_{ticker}", "CLOSE_IMOEX", "CLOSE_USD"], inplace=True)
         merged_df.reset_index(drop=True, inplace=True)
         
         if merged_df.shape[0] < 20:
             raise HTTPException(status_code=422, detail=f"Недостаточно данных после объединения: получено {merged_df.shape[0]} строк, требуется минимум 20.")
         
-        # Предобработка: вычисляем технические индикаторы
+        # Предобработка – вычисляем технические индикаторы
         df_processed = preprocess_data(merged_df, ticker)
         
         features = [
-            "OPEN_SBER", "HIGH_SBER", "LOW_SBER", "CLOSE_SBER", "VOL_SBER",
+            f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
             "CLOSE_IMOEX", "CLOSE_USD",
             "RSI", "SMA_RETURNS", "VOLATILITY", "LOG_RETURNS",
             "MACD_LINE", "MACD_SIGNAL", "MACD_HIST",
@@ -146,7 +145,7 @@ def predict(request: PredictionRequest):
             raise HTTPException(status_code=500, detail=f"Отсутствуют признаки: {missing}")
         
         data = df_processed[features].values.astype(float)
-        seq_length = 20
+        seq_length = models_dict[ticker]["seq_length"]
         if data.shape[0] < seq_length:
             raise HTTPException(status_code=422, detail=f"Недостаточно данных после предобработки. Требуется минимум {seq_length} записей, получено {data.shape[0]}")
         
