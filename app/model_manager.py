@@ -3,10 +3,10 @@ import pickle
 import torch
 from app.models import PricePredictionModel, TCNModel
 
-# Версия модели export MODEL_VERSION=v1
+# Export MODEL_VERSION=v1
 MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
 
-# Путь к директории с моделями для выбранной версии
+# Path to the directory with models for the selected version
 BASE_MODEL_DIR = os.path.join("models", MODEL_VERSION)
 
 def load_models():
@@ -39,14 +39,13 @@ def load_models():
     }
 
     for ticker, cfg in ticker_configs.items():
-        # Проверяем, что все файлы есть
         if not (os.path.exists(cfg["model_file"]) and 
                 os.path.exists(cfg["scaler_X"]) and 
                 os.path.exists(cfg["scaler_y"])):
             print(f"[WARN] Версия '{MODEL_VERSION}': не найдены файлы для {ticker}")
             continue
 
-        # Создаём экземпляр нужной модели
+        # Create model instance
         if cfg["model_class"] == "PricePredictionModel":
             model = PricePredictionModel(
                 seq_length=cfg["seq_length"],
@@ -67,17 +66,16 @@ def load_models():
         else:
             raise ValueError(f"Неизвестная архитектура для {ticker}: {cfg['model_class']}")
 
-        # Загружаем веса
         model.load_state_dict(torch.load(cfg["model_file"], map_location=torch.device('cpu')))
         model.eval()
 
-        # Загружаем скейлеры
+        # Load scalers
         with open(cfg["scaler_X"], "rb") as f:
             scaler_X = pickle.load(f)
         with open(cfg["scaler_y"], "rb") as f:
             scaler_y = pickle.load(f)
 
-        # Сохраняем в словарь
+        # Save in dict
         models_dict[ticker] = {
             "model": model,
             "scaler_X": scaler_X,

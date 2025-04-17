@@ -5,8 +5,8 @@ def validate_model_performance(ticker: str,
                                real_data: pd.DataFrame,
                                prediction_history: pd.DataFrame,
                                threshold: float = 0.05) -> bool:
-    # приведение дат
-    real_data['TRADEDATE']        = pd.to_datetime(real_data['TRADEDATE']).dt.strftime("%Y-%m-%d")
+    
+    real_data['TRADEDATE'] = pd.to_datetime(real_data['TRADEDATE']).dt.strftime("%Y-%m-%d")
     prediction_history['TRADEDATE'] = pd.to_datetime(prediction_history['TRADEDATE']).dt.strftime("%Y-%m-%d")
 
     merged = pd.merge(real_data, prediction_history, on='TRADEDATE', how='inner')

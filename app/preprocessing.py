@@ -66,6 +66,5 @@ def preprocess_data(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     
     df['ATR'] = compute_atr(df, ticker, window=SMA_WINDOW)
 
-    # Заполняем пропуски вперёд и назад, затем удаляем оставшиеся NaN
     df = df.ffill().bfill().dropna().reset_index(drop=True)
     return df

@@ -13,21 +13,25 @@ from app.data import fetch_moex_eod_data, fetch_cbr_usd_rate
 from app.preprocessing import preprocess_data
 
 
-def load_training_metadata():
-    fn = "training_metadata.pkl"
-    if os.path.exists(fn):
-        with open(fn, "rb") as f:
+def get_metadata_path(version: str = "v1"):
+    metadata_dir = os.path.join("history", "metadata")
+    os.makedirs(metadata_dir, exist_ok=True)
+    return os.path.join(metadata_dir, f"training_metadata_{version}.pkl")
+
+def load_training_metadata(version: str = "v1") -> dict:
+    path = get_metadata_path(version)
+    if os.path.exists(path):
+        with open(path, "rb") as f:
             return pickle.load(f)
     return {}
 
-
-def save_training_metadata(metadata: dict):
-    with open("training_metadata.pkl", "wb") as f:
+def save_training_metadata(metadata: dict, version: str = "v1"):
+    path = get_metadata_path(version)
+    with open(path, "wb") as f:
         pickle.dump(metadata, f)
 
 
 def process_tradedate(df: pd.DataFrame) -> pd.DataFrame:
-    # Унификация колонки даты
     if "BEGIN" in df.columns:
         df["TRADEDATE"] = pd.to_datetime(df["BEGIN"])
     elif "TRADETIME" in df.columns:
@@ -117,7 +121,7 @@ def retrain_model(
     scaler_X = current_model_bundle["scaler_X"]
     scaler_y = current_model_bundle["scaler_y"]
     n_samples = X_arr.shape[0]
-    # reshape for scaler: (n_samples * seq_length, num_features)
+    # Reshape for scaler: (n_samples * seq_length, num_features)
     X_flat = X_arr.reshape(-1, X_arr.shape[2])
     X_scaled_flat = scaler_X.transform(X_flat)
     X_scaled = X_scaled_flat.reshape(n_samples, seq_length, X_arr.shape[2])
@@ -133,24 +137,43 @@ def retrain_model(
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
     loss_fn = nn.MSELoss()
 
-    # Fine-tuning loop
+    # Fine‑tuning loop
     model.train()
     for epoch in range(epochs):
-        optimizer.zero_grad()
-        preds = model(X_tensor)
-        loss = loss_fn(preds, y_tensor)
-        loss.backward()
-        optimizer.step()
-        mlflow.log_metric("retraining_loss", loss.item(), step=epoch)
-        print(f"Epoch {epoch+1}/{epochs} - loss={loss.item():.6f}")
+         optimizer.zero_grad()
+         preds = model(X_tensor)
+         loss = loss_fn(preds, y_tensor)
+         loss.backward()
+         optimizer.step()
+         mlflow.log_metric("retraining_loss", loss.item(), step=epoch)
+         print(f"Epoch {epoch+1}/{epochs} - loss={loss.item():.6f}")
 
-    # Update metadata
     metadata = load_training_metadata()
-    metadata[ticker] = new_end_datetime.strftime("%Y-%m-%d")
-    save_training_metadata(metadata)
+    current_ver = metadata.get(f"{ticker}_model_version", os.getenv("MODEL_VERSION", "v1"))
+    # Generate new version: v<major>.<minor+1>
+    ver_nums = current_ver.lstrip("v").split(".")
+    major = ver_nums[0]
+    minor = int(ver_nums[1]) if len(ver_nums) > 1 else 0
+    new_ver = f"v{major}.{minor+1}"
 
-    # Return updated bundle
+    # New folder
+    new_dir = os.path.join("models", new_ver)
+    os.makedirs(new_dir, exist_ok=True)
+
+    # Save model and scaler
+    torch.save(model.state_dict(), os.path.join(new_dir, f"{ticker}_model.pth"))
+    with open(os.path.join(new_dir, f"{ticker}_scaler_X.pkl"), "wb") as f:
+        pickle.dump(current_model_bundle["scaler_X"], f)
+    with open(os.path.join(new_dir, f"{ticker}_scaler_y.pkl"), "wb") as f:
+        pickle.dump(current_model_bundle["scaler_y"], f)
+
+    # Refresh metadata
+    metadata[ticker] = new_end_datetime.strftime("%Y-%m-%d")
+    metadata[f"{ticker}_model_version"] = new_ver
+    save_training_metadata(metadata)
+    print(f"Saved new version {new_ver} for {ticker} in {new_dir}")
+
     updated_bundle = current_model_bundle.copy()
     updated_bundle["model"] = model
+    updated_bundle["model_version"] = new_ver
     return updated_bundle
-

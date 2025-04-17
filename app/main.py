@@ -64,7 +64,7 @@ def predict(request: PredictionRequest):
             "end_date": request.end_date
         })
 
-        # дообучение по дате
+        # Retrain model older then 3 days ago
         metadata = load_training_metadata()
         last_train = datetime.strptime(metadata.get(ticker, request.start_date), "%Y-%m-%d").date()
         if (req_end - last_train).days > 3:
@@ -78,18 +78,18 @@ def predict(request: PredictionRequest):
         else:
             mlflow.log_param("retraining_trigger", False)
 
-        # загрузка EOD
+        # Loading EOD
         df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
         df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
         df_u = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
 
-        # fallback USD
+        # Fallback USD
         dates = pd.date_range(request.start_date, request.end_date)
         if df_u is None or df_u.empty or "CLOSE" not in df_u.columns:
             rates = [fetch_cbr_usd_rate(d) for d in dates]
             df_u = pd.DataFrame({"TRADEDATE": dates, "CLOSE": rates})
 
-        # привести даты
+
         df_t = process_tradedate(df_t)
         df_i = process_tradedate(df_i)
         df_u = process_tradedate(df_u)
@@ -133,13 +133,13 @@ def predict(request: PredictionRequest):
         mlflow.log_metric("predicted_price", pred)
         date_str = datetime.today().strftime("%Y-%m-%d")
 
-        # сохранить предсказание
+        # Save prediction
         rec = pd.DataFrame({"TRADEDATE":[date_str], "predicted_price":[pred]})
         pf  = os.path.join("history", f"predictions_{ticker}.csv")
         rec.to_csv(pf, mode='a' if os.path.exists(pf) else 'w',
                    header=not os.path.exists(pf), index=False)
 
-        # проверка качества
+        # Performance check
         rf = os.path.join("history", f"real_{ticker}.csv")
         if os.path.exists(rf):
             real = pd.read_csv(rf)
