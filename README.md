@@ -1,8 +1,8 @@
 # MOEX Price Prediction
 
-[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)  
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)  
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
-[![FastAPI 0.95+](https://img.shields.io/badge/FastAPI-0.95+-green.svg)](https://fastapi.tiangolo.com/)
+[![FastAPI 0.115](https://img.shields.io/badge/FastAPI-0.115-green.svg)](https://fastapi.tiangolo.com/)
 
 **MOEX Price Prediction** is a project that forecasts Moscow Exchange stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA), and a deep learning model built with PyTorch. The project provides an end-to-end solution—from data preprocessing and model training to serving predictions via a FastAPI REST API.
 
@@ -42,25 +42,29 @@
 MOEX_PREDICT/
 ├── app/
 │   ├── __init__.py
-│   ├── data.py                # Data fetching from MOEX and CBR
-│   ├── main.py                # FastAPI entry point
-│   ├── model_manager.py       # Model and scaler loading utilities
-│   ├── models.py              # PyTorch model definition (LSTM + Attention)
-│   ├── predict.py             # Prediction logic using the trained model
-│   ├── preprocessing.py       # Data preprocessing, RSI, SMA calculation, etc.
-│   ├── training.py            # Model training script
-│   └── transfer_learning.py   # Retraining script(beta)
+│   ├── data.py                    # Data fetching from MOEX and CBR
+│   ├── main.py                    # FastAPI entry point
+│   ├── model_manager.py           # Model and scaler loading utilities
+│   ├── models.py                  # PyTorch model definition (LSTM + Attention)
+│   ├── monitorng.py               # MLflow check on error performance
+│   ├── predict.py                 # Prediction logic using the trained model
+│   ├── preprocessing.py           # Data preprocessing, RSI, SMA calculation, etc.
+│   ├── scheduler.py               # Background loading of the "true" closing price (beta)
+│   └── transfer_learning.py       # Retraining script
+├── history/                       # Save metadate & model predict
 ├── models/
-│   ├── GAZP_model.pth         # Saved PyTorch model weights
-│   ├── GAZP_scaler_X.pkl      # RobustScaler for input features
-│   ├── GAZP_scaler_y.pkl      # RobustScaler for input features
-│   ├── SBER_model.pth         # Saved PyTorch model weights
-│   ├── SBER_scaler_X.pkl      # RobustScaler for input features
-│   └── SBER_scaler_y.pkl      # RobustScaler for target
+│   ├── v1
+│       ├── GAZP_model.pth         # Saved PyTorch model weight
+│       ├── GAZP_scaler_X.pkl      # RobustScaler for input features
+│       ├── GAZP_scaler_y.pkl      # RobustScaler for input features
+│       ├── SBER_model.pth         # Saved PyTorch model weights
+│       ├── SBER_scaler_X.pkl      # RobustScaler for input features
+│       └── SBER_scaler_y.pkl      # RobustScaler for target
+│    └── v1.1 ...                  # New folder create after retrain models
 ├── notebooks/
-│   ├── Best_GAZP.ipynb        # Notebook for TCN model analysis and experiments
-│   └── Best_SBER.ipynb        # Notebook for LSTM model analysis and experiments
-└── README.md                  # Project documentation (this file)
+│   ├── Best_GAZP.ipynb            # Notebook for TCN model analysis and experiments
+│   └── Best_SBER.ipynb            # Notebook for LSTM model analysis and experiments
+└── README.md                      # Project documentation (this file)
 ```
 
 ---
