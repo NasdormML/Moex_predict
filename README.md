@@ -67,8 +67,8 @@ MOEX_PREDICT/
 
 ## Technologies and Tools
 
-- **Programming Language:** Python 3.8+
-- **Deep Learning Framework:** PyTorch
+- **Programming Language:** Python 3.10+
+- **Deep Learning Framework:** PyTorch 2.5.1+
 - **Web Framework:** FastAPI (with Uvicorn), MLflow
 - **Data Analysis Libraries:** Pandas, NumPy, scikit-learn
 - **Visualization:** Matplotlib, Seaborn
@@ -81,7 +81,7 @@ MOEX_PREDICT/
 ### Step 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your_username/MOEX_PREDICT.git
+git clone https://github.com/NasdormML/Moex_predict.git
 cd MOEX_PREDICT
 ```
 
@@ -98,20 +98,7 @@ source venv/bin/activate   # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 4. Train the Model
-
-Run the training script to generate the model and scaler files:
-
-```bash
-python app/training.py
-```
-
-This process creates:
-- `models/SBER_model.pth`
-- `models/SBER_scaler_X.pkl`
-- `models/SBER_scaler_y.pkl`
-
-### Step 5. Run the FastAPI Application
+### Step 4. Run the FastAPI Application
 Start MLflow server.
 
 ```bash
