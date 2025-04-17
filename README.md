@@ -54,13 +54,13 @@ MOEX_PREDICT/
 ├── history/                       # Save metadate & model predict
 ├── models/
 │   ├── v1
-│       ├── GAZP_model.pth         # Saved PyTorch model weight
-│       ├── GAZP_scaler_X.pkl      # RobustScaler for input features
-│       ├── GAZP_scaler_y.pkl      # RobustScaler for input features
-│       ├── SBER_model.pth         # Saved PyTorch model weights
-│       ├── SBER_scaler_X.pkl      # RobustScaler for input features
-│       └── SBER_scaler_y.pkl      # RobustScaler for target
-│    └── v1.1 ...                  # New folder create after retrain models
+│   │   ├── GAZP_model.pth         # Saved PyTorch model weight
+│   │   ├── GAZP_scaler_X.pkl      # RobustScaler for input features
+│   │   ├── GAZP_scaler_y.pkl      # RobustScaler for input features
+│   │   ├── SBER_model.pth         # Saved PyTorch model weights
+│   │   ├── SBER_scaler_X.pkl      # RobustScaler for input features
+│   │   └── SBER_scaler_y.pkl      # RobustScaler for target
+│   └── v1.1 ...                   # New folder create after retrain models
 ├── notebooks/
 │   ├── Best_GAZP.ipynb            # Notebook for TCN model analysis and experiments
 │   └── Best_SBER.ipynb            # Notebook for LSTM model analysis and experiments
