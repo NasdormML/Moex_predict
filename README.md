@@ -42,29 +42,34 @@
 MOEX_PREDICT/
 ├── app/
 │   ├── __init__.py
-│   ├── data.py            # Data fetching from MOEX and CBR
-│   ├── main.py            # FastAPI entry point
-│   ├── model_manager.py   # Model and scaler loading utilities
-│   ├── models.py          # PyTorch model definition (LSTM + Attention)
-│   ├── predict.py         # Prediction logic using the trained model
-│   ├── preprocessing.py   # Data preprocessing, RSI, SMA calculation, etc.
-│   └── training.py        # Model training script
+│   ├── data.py                # Data fetching from MOEX and CBR
+│   ├── main.py                # FastAPI entry point
+│   ├── model_manager.py       # Model and scaler loading utilities
+│   ├── models.py              # PyTorch model definition (LSTM + Attention)
+│   ├── predict.py             # Prediction logic using the trained model
+│   ├── preprocessing.py       # Data preprocessing, RSI, SMA calculation, etc.
+│   ├── training.py            # Model training script
+│   └── transfer_learning.py   # Retraining script(beta)
 ├── models/
-│   ├── SBER_model.pth     # Saved PyTorch model weights
-│   ├── SBER_scaler_X.pkl  # MinMaxScaler for input features
-│   └── SBER_scaler_y.pkl  # MinMaxScaler for target
+│   ├── GAZP_model.pth         # Saved PyTorch model weights
+│   ├── GAZP_scaler_X.pkl      # RobustScaler for input features
+│   ├── GAZP_scaler_y.pkl      # RobustScaler for input features
+│   ├── SBER_model.pth         # Saved PyTorch model weights
+│   ├── SBER_scaler_X.pkl      # RobustScaler for input features
+│   └── SBER_scaler_y.pkl      # RobustScaler for target
 ├── notebooks/
-│   └── Best_SBER.ipynb    # Notebook for model analysis and experiments
-└── README.md              # Project documentation (this file)
+│   ├── Best_GAZP.ipynb        # Notebook for TCN model analysis and experiments
+│   └── Best_SBER.ipynb        # Notebook for LSTM model analysis and experiments
+└── README.md                  # Project documentation (this file)
 ```
 
 ---
 
 ## Technologies and Tools
 
-- **Programming Language:** Python 3.8+
-- **Deep Learning Framework:** PyTorch
-- **Web Framework:** FastAPI (with Uvicorn)
+- **Programming Language:** Python 3.10+
+- **Deep Learning Framework:** PyTorch 2.5.1+
+- **Web Framework:** FastAPI (with Uvicorn), MLflow
 - **Data Analysis Libraries:** Pandas, NumPy, scikit-learn
 - **Visualization:** Matplotlib, Seaborn
 - **Version Control:** Git and GitHub
@@ -76,7 +81,7 @@ MOEX_PREDICT/
 ### Step 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your_username/MOEX_PREDICT.git
+git clone https://github.com/NasdormML/Moex_predict.git
 cd MOEX_PREDICT
 ```
 
@@ -93,20 +98,13 @@ source venv/bin/activate   # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 4. Train the Model
-
-Run the training script to generate the model and scaler files:
+### Step 4. Run the FastAPI Application
+Start MLflow server.
 
 ```bash
-python app/training.py
+mlflow ui --port 5001
 ```
-
-This process creates:
-- `models/SBER_model.pth`
-- `models/SBER_scaler_X.pkl`
-- `models/SBER_scaler_y.pkl`
-
-### Step 5. Run the FastAPI Application
+Booting FastAPI:
 
 ```bash
 uvicorn app.main:app --reload
@@ -120,17 +118,32 @@ Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for i
 
 Below is the PyTorch model training graph, illustrating the model's convergence and performance:
 
-![image](https://github.com/user-attachments/assets/9418a732-f4d2-4e9d-9522-86d33856a6f9)
-
 *Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
+
+# SBER ticker 
+
+![image](https://github.com/user-attachments/assets/9ba4079f-85e3-4824-83dc-78e2757a339d)
+
 ### PyTorch Model Training Results
   | Performance Metrics | Validation Accuracy |
   |---------------------|---------------------|
-  | MSE (RUB^2):        | 48.849              |
-  | RMSE (RUB):         | 6.989               |
-  | MAE (RUB):          | 5.377               |
-  | MAPE:               | 2.08%               |
+  | MSE (RUB^2):        | 35.699              |
+  | RMSE (RUB):         | 5.975               |
+  | MAE (RUB):          | 4.589               |
+  | MAPE:               | 1.74%               |
 
+# GAZP ticker
+
+![image](https://github.com/user-attachments/assets/1bb40b4a-f863-436a-85f4-1eb5371ee195)
+
+### TCN Model Training Results
+  | Performance Metrics | Validation Accuracy |
+  |---------------------|---------------------|
+  | MSE (RUB^2):        | 14.513              |
+  | RMSE (RUB):         | 3.810               |
+  | MAE (RUB):          | 2.727               |
+  | MAPE:               | 1.89%               |
+  
 ---
 
 ## API and Demo
@@ -144,8 +157,8 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ```json
 {
   "ticker": "SBER",
-  "start_date": "2025-02-27",
-  "end_date": "2025-03-30"
+  "start_date": "2025-03-01",
+  "end_date": "2025-04-05"
 }
 ```
 
@@ -154,8 +167,8 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ```json
 {
   "ticker": "SBER",
-  "predicted_price": 310.77154541015625,
-  "date": "2025-03-30"
+  "predicted_price": 297.791015625,
+  "date": "2025-04-06"
 }
 ```
 
