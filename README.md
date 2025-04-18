@@ -1,8 +1,17 @@
 # MOEX Price Prediction
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)  
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)  
-[![FastAPI 0.115](https://img.shields.io/badge/FastAPI-0.115-green.svg)](https://fastapi.tiangolo.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Pandas](https://img.shields.io/badge/pandas-2.2.3-%23150458?logo=pandas&logoColor=white)
+![Numpy](https://img.shields.io/badge/numpy-2.2.4-%23013243?logo=numpy&logoColor=white)
+![Pytorch](https://img.shields.io/badge/torch-2.6.0-%23EE4C2C?logo=pytorch&logoColor=white)
+![MLflow](https://img.shields.io/badge/mlflow-2.21.3-%23004750?logo=mlflow&logoColor=white)
+![Apscheduler](https://img.shields.io/badge/apscheduler-3.11.0-blue)
+![Requests](https://img.shields.io/badge/requests-2.32.3-%23BA1200?logo=requests&logoColor=white)
+![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-%23009ECE?logo=fastapi&logoColor=white)
+![Pydantic](https://img.shields.io/badge/pydantic-2.11.3-%23008BD3?logo=pydantic&logoColor=white)
+![Uvicorn](https://img.shields.io/badge/uvicorn-0.34.1-%232C3E50?logo=uvicorn&logoColor=white)
+
+
 
 **MOEX Price Prediction** is a project that forecasts Moscow Exchange stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA), and a deep learning model built with PyTorch. The project provides an end-to-end solution—from data preprocessing and model training to serving predictions via a FastAPI REST API.
 
