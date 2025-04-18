@@ -96,23 +96,13 @@ python -m venv venv
 source venv/bin/activate   # On Windows: venv\Scripts\activate
 ```
 
-### Step 3. Install Dependencies
+### Step 3. Run Makefile
+Makefile will set dependencies and run MLflow with Fastapi.
 
 ```bash
-pip install -r requirements.txt
+make run
 ```
-
-### Step 4. Run the FastAPI Application
-Start MLflow server.
-
-```bash
-mlflow ui --port 5001
-```
-Booting FastAPI:
-
-```bash
-uvicorn app.main:app --reload
-```
+MLflow will be available in [http://127.0.0.1:5001](http://127.0.0.1:5001).
 
 Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for interactive testing.
 
