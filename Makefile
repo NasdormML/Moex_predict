@@ -13,6 +13,7 @@ mlflow:
 	mlflow ui --host 0.0.0.0 --port 5001
 
 run:
+	pip install -r requirements.txt
 	mlflow ui --host 0.0.0.0 --port 5001 & \
 	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
