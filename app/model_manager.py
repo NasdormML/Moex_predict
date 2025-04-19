@@ -2,50 +2,58 @@ import os
 import pickle
 import torch
 from app.models import PricePredictionModel, TCNModel
+from app.transfer_learning import load_training_metadata
 
-# Export MODEL_VERSION=v1
-MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
+DEFAULT_MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
 
-# Path to the directory with models for the selected version
-BASE_MODEL_DIR = os.path.join("models", MODEL_VERSION)
+TICKER_CONFIGS = {
+    "SBER": {
+        "model_class": "PricePredictionModel",
+        "model_name": "SBER_model.pth",
+        "scaler_X_name": "SBER_scaler_X.pkl",
+        "scaler_y_name": "SBER_scaler_y.pkl",
+        "seq_length": 20,
+        "num_features": 18,
+        "output_dim": 1,
+        "lstm_units": 240,
+        "fc_units": 127,
+        "dropout_rate": 0.13351299266216415
+    },
+    "GAZP": {
+        "model_class": "TCNModel",
+        "model_name": "GAZP_model.pth",
+        "scaler_X_name": "GAZP_scaler_X.pkl",
+        "scaler_y_name": "GAZP_scaler_y.pkl",
+        "seq_length": 20,
+        "num_features": 18,
+        "num_channels": [64, 128, 256, 512],
+        "kernel_size": 5,
+        "dropout": 0.28,
+        "fc_units": 30
+    }
+}
 
 def load_models():
+    """
+    Загружает для каждого тикера последнюю версию модели из папки models/<version>/
+    и возвращает словарь {ticker: {model, scaler_X, scaler_y, seq_length, model_version}}
+    """
     models_dict = {}
-    ticker_configs = {
-        "SBER": {
-            "model_class": "PricePredictionModel",
-            "model_file": os.path.join(BASE_MODEL_DIR, "SBER_model.pth"),
-            "scaler_X":   os.path.join(BASE_MODEL_DIR, "SBER_scaler_X.pkl"),
-            "scaler_y":   os.path.join(BASE_MODEL_DIR, "SBER_scaler_y.pkl"),
-            "seq_length": 20,
-            "num_features": 18,
-            "output_dim": 1,
-            "lstm_units": 196,
-            "fc_units": 151,
-            "dropout_rate": 0.1335
-        },
-        "GAZP": {
-            "model_class": "TCNModel",
-            "model_file": os.path.join(BASE_MODEL_DIR, "GAZP_model.pth"),
-            "scaler_X":   os.path.join(BASE_MODEL_DIR, "GAZP_scaler_X.pkl"),
-            "scaler_y":   os.path.join(BASE_MODEL_DIR, "GAZP_scaler_y.pkl"),
-            "seq_length": 20,
-            "num_features": 18,
-            "num_channels": [32, 64, 128],
-            "kernel_size": 4,
-            "dropout": 0.28,
-            "fc_units": 18
-        }
-    }
+    metadata = load_training_metadata()
 
-    for ticker, cfg in ticker_configs.items():
-        if not (os.path.exists(cfg["model_file"]) and 
-                os.path.exists(cfg["scaler_X"]) and 
-                os.path.exists(cfg["scaler_y"])):
-            print(f"[WARN] Версия '{MODEL_VERSION}': не найдены файлы для {ticker}")
+    for ticker, cfg in TICKER_CONFIGS.items():
+        version = metadata.get(f"{ticker}_model_version", DEFAULT_MODEL_VERSION)
+        model_dir = os.path.join("models", version)
+
+        model_path    = os.path.join(model_dir, cfg["model_name"])
+        scaler_X_path = os.path.join(model_dir, cfg["scaler_X_name"])
+        scaler_y_path = os.path.join(model_dir, cfg["scaler_y_name"])
+        if not (os.path.exists(model_path) and 
+                os.path.exists(scaler_X_path) and 
+                os.path.exists(scaler_y_path)):
+            print(f"[WARN] для {ticker} не найдены файлы в {model_dir}, пропускаем")
             continue
 
-        # Create model instance
         if cfg["model_class"] == "PricePredictionModel":
             model = PricePredictionModel(
                 seq_length=cfg["seq_length"],
@@ -64,25 +72,24 @@ def load_models():
                 fc_units=cfg["fc_units"]
             )
         else:
-            raise ValueError(f"Неизвестная архитектура для {ticker}: {cfg['model_class']}")
+            raise ValueError(f"Неизвестная модель для {ticker}: {cfg['model_class']}")
 
-        model.load_state_dict(torch.load(cfg["model_file"], map_location=torch.device('cpu')))
+        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         model.eval()
 
-        # Load scalers
-        with open(cfg["scaler_X"], "rb") as f:
+        with open(scaler_X_path, "rb") as f:
             scaler_X = pickle.load(f)
-        with open(cfg["scaler_y"], "rb") as f:
+        with open(scaler_y_path, "rb") as f:
             scaler_y = pickle.load(f)
 
-        # Save in dict
         models_dict[ticker] = {
             "model": model,
             "scaler_X": scaler_X,
             "scaler_y": scaler_y,
-            "seq_length": cfg["seq_length"]
+            "seq_length": cfg.get("seq_length"),
+            "model_version": version
         }
 
     if not models_dict:
-        raise RuntimeError(f"Ни одна модель не загружена из версии '{MODEL_VERSION}'")
+        raise RuntimeError("Ни одна модель не загружена!")
     return models_dict

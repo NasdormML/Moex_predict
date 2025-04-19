@@ -1,17 +1,18 @@
-import scheduler
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import uvicorn
+import os
 import math
 from datetime import datetime, timedelta
+
+import uvicorn
 import pandas as pd
 import mlflow
-import os
+import mlflow.pytorch
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from app.data import fetch_moex_eod_data, fetch_cbr_usd_rate
 from app.preprocessing import preprocess_data
 from app.predict import predict_price
-from app.model_manager import load_models
+from app.model_manager import load_models, DEFAULT_MODEL_VERSION
 from app.transfer_learning import retrain_model, load_training_metadata
 from app.monitoring import validate_model_performance
 
@@ -19,6 +20,7 @@ app = FastAPI(title="MOEX Price Prediction API")
 
 mlflow.set_tracking_uri("http://127.0.0.1:5001")
 mlflow.set_experiment("MOEX_Price_Prediction")
+mlflow.pytorch.autolog()
 
 models_dict = load_models()
 
@@ -28,6 +30,7 @@ class PredictionRequest(BaseModel):
     ticker: str
     start_date: str  # YYYY-MM-DD
     end_date: str
+
 
 def process_tradedate(df: pd.DataFrame) -> pd.DataFrame:
     if "BEGIN" in df.columns:
@@ -41,77 +44,119 @@ def process_tradedate(df: pd.DataFrame) -> pd.DataFrame:
     df["TRADEDATE"] = df["TRADEDATE"].dt.normalize()
     return df
 
+
 @app.get("/")
 def read_root():
     return {"message": "Добро пожаловать в API предсказания цен MOEX"}
 
+
+@app.get("/model_info/{ticker}")
+def model_info(ticker: str):
+    """Возвращает текущую версию модели и дату последнего обучения для тикера"""
+    ticker = ticker.upper()
+    if ticker not in models_dict:
+        raise HTTPException(404, f"Модель для {ticker} не найдена")
+    metadata = load_training_metadata()
+    last_train = metadata.get(ticker)
+    return {
+        "ticker": ticker,
+        "model_version": models_dict[ticker]["model_version"],
+        "last_train_date": last_train
+    }
+
+
 @app.post("/predict")
 def predict(request: PredictionRequest):
+    global models_dict
+
     ticker = request.ticker.upper()
     if ticker not in models_dict:
         raise HTTPException(404, f"Модель для {ticker} не найдена")
 
     try:
         req_start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
-        req_end   = datetime.strptime(request.end_date,   "%Y-%m-%d").date()
+        req_end = datetime.strptime(request.end_date, "%Y-%m-%d").date()
     except ValueError:
-        raise HTTPException(422, "Неверный формат даты")
+        raise HTTPException(422, "Неверный формат даты: используйте YYYY-MM-DD")
 
     with mlflow.start_run(run_name=f"Predict_{ticker}_{datetime.now():%Y%m%d_%H%M%S}"):
+        model_version = models_dict[ticker].get("model_version", DEFAULT_MODEL_VERSION)
         mlflow.log_params({
             "ticker": ticker,
             "start_date": request.start_date,
             "end_date": request.end_date
         })
+        mlflow.set_tag("model_version", model_version)
 
-        # Retrain model older then 3 days ago
+        # Model retrain check
         metadata = load_training_metadata()
-        last_train = datetime.strptime(metadata.get(ticker, request.start_date), "%Y-%m-%d").date()
-        if (req_end - last_train).days > 3:
-            mlflow.log_param("retraining_trigger", True)
+        last_train_str = metadata.get(ticker)
+        last_train = datetime.strptime(last_train_str, "%Y-%m-%d").date() if last_train_str else None
+
+        retrain_flag = 0
+        if last_train is None or last_train < req_start:
+            retrain_flag = 1
+            retrain_from = (
+                datetime.combine(last_train, datetime.min.time())
+                if last_train else datetime.combine(req_start, datetime.min.time())
+            )
             models_dict[ticker] = retrain_model(
                 ticker,
-                datetime.combine(last_train, datetime.min.time()),
+                retrain_from,
                 datetime.combine(req_end, datetime.min.time()),
                 models_dict[ticker]
             )
-        else:
-            mlflow.log_param("retraining_trigger", False)
+            # после дообучения обновляем модели и версию
+            models_dict = load_models()
+            model_version = models_dict[ticker]["model_version"]
+            mlflow.set_tag("model_version", model_version)
+        mlflow.log_metric("retraining_trigger", retrain_flag)
 
-        # Loading EOD
-        df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", request.start_date, request.end_date)
-        df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", request.start_date, request.end_date)
-        df_u = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", request.start_date, request.end_date)
+        df_t = fetch_moex_eod_data(
+            ticker, "stock", "shares", "TQBR",
+            request.start_date, request.end_date
+        )
+        df_i = fetch_moex_eod_data(
+            "IMOEX", "stock", "index", "SNDX",
+            request.start_date, request.end_date
+        )
+        df_u = fetch_moex_eod_data(
+            "USD000UTSTOM", "currency", "selt", "CETS",
+            request.start_date, request.end_date
+        )
 
-        # Fallback USD
         dates = pd.date_range(request.start_date, request.end_date)
         if df_u is None or df_u.empty or "CLOSE" not in df_u.columns:
             rates = [fetch_cbr_usd_rate(d) for d in dates]
             df_u = pd.DataFrame({"TRADEDATE": dates, "CLOSE": rates})
-
 
         df_t = process_tradedate(df_t)
         df_i = process_tradedate(df_i)
         df_u = process_tradedate(df_u)
 
         df_t.rename(columns={
-            "OPEN": f"OPEN_{ticker}", "HIGH": f"HIGH_{ticker}",
-            "LOW": f"LOW_{ticker}",   "CLOSE": f"CLOSE_{ticker}",
+            "OPEN": f"OPEN_{ticker}",
+            "HIGH": f"HIGH_{ticker}",
+            "LOW": f"LOW_{ticker}",
+            "CLOSE": f"CLOSE_{ticker}",
             "VOLUME": f"VOL_{ticker}"
         }, inplace=True)
         df_i.rename(columns={"CLOSE": "CLOSE_IMOEX"}, inplace=True)
-        df_u.rename(columns={"CLOSE": "CLOSE_USD"},   inplace=True)
+        df_u.rename(columns={"CLOSE": "CLOSE_USD"}, inplace=True)
 
-        merged = (df_t[["TRADEDATE", f"OPEN_{ticker}", f"HIGH_{ticker}",
-                        f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}"]]
-                  .merge(df_i[["TRADEDATE","CLOSE_IMOEX"]], on="TRADEDATE", how="outer")
-                  .merge(df_u[["TRADEDATE","CLOSE_USD"]],   on="TRADEDATE", how="outer")
-                  .sort_values("TRADEDATE")
-                  .dropna())
+        merged = (
+            df_t[["TRADEDATE", f"OPEN_{ticker}", f"HIGH_{ticker}",
+                  f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}"]]
+            .merge(df_i[["TRADEDATE", "CLOSE_IMOEX"]], on="TRADEDATE", how="outer")
+            .merge(df_u[["TRADEDATE", "CLOSE_USD"]], on="TRADEDATE", how="outer")
+            .sort_values("TRADEDATE")
+            .dropna()
+        )
 
         df_proc = preprocess_data(merged, ticker)
         features = [
-            f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
+            f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}",
+            f"CLOSE_{ticker}", f"VOL_{ticker}",
             "CLOSE_IMOEX", "CLOSE_USD",
             "RSI", "SMA_RETURNS", "VOLATILITY", "LOG_RETURNS",
             "MACD_LINE", "MACD_SIGNAL", "MACD_HIST",
@@ -123,30 +168,35 @@ def predict(request: PredictionRequest):
         if X.shape[0] < seq:
             raise HTTPException(422, "Недостаточно данных после предобработки")
 
-        pred = predict_price(models_dict[ticker]["model"],
-                             models_dict[ticker]["scaler_X"],
-                             models_dict[ticker]["scaler_y"],
-                             X, seq)
+        pred = predict_price(
+            models_dict[ticker]["model"],
+            models_dict[ticker]["scaler_X"],
+            models_dict[ticker]["scaler_y"],
+            X, seq
+        )
         if not math.isfinite(pred):
             raise HTTPException(500, "Invalid prediction")
 
         mlflow.log_metric("predicted_price", pred)
         date_str = datetime.today().strftime("%Y-%m-%d")
 
-        # Save prediction
-        rec = pd.DataFrame({"TRADEDATE":[date_str], "predicted_price":[pred]})
-        pf  = os.path.join("history", f"predictions_{ticker}.csv")
-        rec.to_csv(pf, mode='a' if os.path.exists(pf) else 'w',
-                   header=not os.path.exists(pf), index=False)
+        # Save predict and check performance
+        rec = pd.DataFrame({"TRADEDATE": [date_str], "predicted_price": [pred]})
+        pf = os.path.join("history", f"predictions_{ticker}.csv")
+        rec.to_csv(
+            pf,
+            mode='a' if os.path.exists(pf) else 'w',
+            header=not os.path.exists(pf),
+            index=False
+        )
 
-        # Performance check
-        rf = os.path.join("history", f"real_{ticker}.csv")
-        if os.path.exists(rf):
-            real = pd.read_csv(rf)
+        real_path = os.path.join("history", f"real_{ticker}.csv")
+        if os.path.exists(real_path):
+            real = pd.read_csv(real_path)
             hist = pd.read_csv(pf)
-            ok   = validate_model_performance(ticker, real, hist)
-            mlflow.log_param("performance_issue", not ok)
-            if not ok:
+            perf_ok = validate_model_performance(ticker, real, hist)
+            mlflow.log_metric("performance_issue", 0 if perf_ok else 1)
+            if not perf_ok:
                 models_dict[ticker] = retrain_model(
                     ticker,
                     datetime.strptime(load_training_metadata()[ticker], "%Y-%m-%d"),
@@ -156,5 +206,6 @@ def predict(request: PredictionRequest):
 
         return {"ticker": ticker, "predicted_price": pred, "date": date_str}
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=5000)

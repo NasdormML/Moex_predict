@@ -50,8 +50,8 @@ def retrain_model(
     new_end_datetime: datetime,
     current_model_bundle: dict,
     window_days: int = 180,
-    lr: float = 1e-5,
-    epochs: int = 10
+    lr: float = 1e-6,
+    epochs: int = 40
 ) -> dict:
     """ 
     Постепенная доработка: объединение новых данных EOD, IMOEX, USD, вычислительных показателей,
