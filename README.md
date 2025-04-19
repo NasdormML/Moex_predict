@@ -125,27 +125,27 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 
 # SBER ticker 
 
-![image](https://github.com/user-attachments/assets/9ba4079f-85e3-4824-83dc-78e2757a339d)
+![image](https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066)
 
-### PyTorch Model Training Results
+### LSTM Model Training Results
   | Performance Metrics | Validation Accuracy |
   |---------------------|---------------------|
-  | MSE (RUB^2):        | 35.699              |
-  | RMSE (RUB):         | 5.975               |
-  | MAE (RUB):          | 4.589               |
-  | MAPE:               | 1.74%               |
+  | MSE (RUB^2):        | 19.869              |
+  | RMSE (RUB):         | 4.457               |
+  | MAE (RUB):          | 3.111               |
+  | MAPE:               | 1.20%               |
 
 # GAZP ticker
 
-![image](https://github.com/user-attachments/assets/1bb40b4a-f863-436a-85f4-1eb5371ee195)
+![image](https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030)
 
 ### TCN Model Training Results
   | Performance Metrics | Validation Accuracy |
   |---------------------|---------------------|
-  | MSE (RUB^2):        | 14.513              |
-  | RMSE (RUB):         | 3.810               |
-  | MAE (RUB):          | 2.727               |
-  | MAPE:               | 1.89%               |
+  | MSE (RUB^2):        | 18.311              |
+  | RMSE (RUB):         | 4.279               |
+  | MAE (RUB):          | 3.035               |
+  | MAPE:               | 2.08%               |
   
 ---
 
