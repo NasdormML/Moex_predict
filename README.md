@@ -24,8 +24,8 @@
 3. [Architecture and Structure](#architecture-and-structure)
 4. [Technologies and Tools](#technologies-and-tools)
 5. [Installation and Setup](#installation-and-setup)
-6. [Model Training and Visualization](#model-training-and-visualization)
-7. [API and Demo](#api-and-demo)
+6. [API and Demo](#api-and-demo)
+7. [Model Training and Visualization](#model-training-and-visualization)
 8. [License](#license)
 
 ---
@@ -115,6 +115,32 @@ MLflow will be available in [http://127.0.0.1:5001](http://127.0.0.1:5001).
 
 Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for interactive testing.
 
+### API and Demo
+
+## Example API Request
+
+**Endpoint:** `POST /predict`
+
+**Sample Request:**
+
+```json
+{
+  "ticker": "SBER",
+  "start_date": "2025-03-01",
+  "end_date": "2025-04-05"
+}
+```
+
+**Sample Response:**
+
+```json
+{
+  "ticker": "SBER",
+  "predicted_price": 297.791015625,
+  "date": "2025-04-06"
+}
+```
+
 ---
 
 ## Model Training and Visualization
@@ -146,36 +172,6 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
   | RMSE (RUB):         | 4.279               |
   | MAE (RUB):          | 3.035               |
   | MAPE:               | 2.08%               |
-  
----
-
-## API and Demo
-
-### Example API Request
-
-**Endpoint:** `POST /predict`
-
-**Sample Request:**
-
-```json
-{
-  "ticker": "SBER",
-  "start_date": "2025-03-01",
-  "end_date": "2025-04-05"
-}
-```
-
-**Sample Response:**
-
-```json
-{
-  "ticker": "SBER",
-  "predicted_price": 297.791015625,
-  "date": "2025-04-06"
-}
-```
-
-Test the API using the interactive [Swagger UI](http://127.0.0.1:8000/docs).
 
 ---
 
