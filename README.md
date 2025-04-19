@@ -55,7 +55,7 @@ MOEX_PREDICT/
 │   ├── main.py                    # FastAPI entry point
 │   ├── model_manager.py           # Model and scaler loading utilities
 │   ├── models.py                  # PyTorch model definition (LSTM + Attention)
-│   ├── monitorng.py               # MLflow check on error performance
+│   ├── monitoring.py              # MLflow check on error performance
 │   ├── predict.py                 # Prediction logic using the trained model
 │   ├── preprocessing.py           # Data preprocessing, RSI, SMA calculation, etc.
 │   ├── scheduler.py               # Background loading of the "true" closing price (beta)
@@ -154,7 +154,7 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ![image](https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066)
 
 ### LSTM Model Training Results
-  | Performance Metrics | Validation Accuracy |
+  | Performance Metrics | Validation Metrics  |
   |---------------------|---------------------|
   | MSE (RUB^2):        | 19.869              |
   | RMSE (RUB):         | 4.457               |
@@ -166,7 +166,7 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 ![image](https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030)
 
 ### TCN Model Training Results
-  | Performance Metrics | Validation Accuracy |
+  | Performance Metrics | Validation Metrics  |
   |---------------------|---------------------|
   | MSE (RUB^2):        | 18.311              |
   | RMSE (RUB):         | 4.279               |
