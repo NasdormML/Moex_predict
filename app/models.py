@@ -1,68 +1,33 @@
 import torch
 import torch.nn as nn
 
-# ==========================
-# Модель LSTM с attention
-# ==========================
-
 class AttentionLayer(nn.Module):
-    """
-    Слой внимания (Attention Layer) для объединения временных шагов.
-    """
     def __init__(self, hidden_dim, timesteps):
-        super(AttentionLayer, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.timesteps = timesteps
-        self.W = nn.Parameter(torch.Tensor(hidden_dim, 1))
-        self.b = nn.Parameter(torch.zeros(timesteps, 1))
-        self.reset_parameters()
-    
-    def reset_parameters(self):
+        super().__init__()
+        self.W = nn.Parameter(torch.Tensor(hidden_dim,1))
+        self.b = nn.Parameter(torch.zeros(timesteps,1))
         nn.init.xavier_uniform_(self.W)
-    
-    def forward(self, x):
-        # x: (batch, timesteps, hidden_dim)
-        e = torch.matmul(x, self.W) + self.b  # (batch, timesteps, 1)
-        e = e.squeeze(-1)                     # (batch, timesteps)
-        alpha = torch.softmax(e, dim=1)       # (batch, timesteps)
-        alpha = alpha.unsqueeze(-1)           # (batch, timesteps, 1)
-        context = torch.sum(x * alpha, dim=1)   # (batch, hidden_dim)
-        return context
+    def forward(self,x):
+        e = torch.matmul(x,self.W)+self.b
+        alpha = torch.softmax(e.squeeze(-1),dim=1).unsqueeze(-1)
+        return torch.sum(x*alpha,dim=1)
 
 class PricePredictionModel(nn.Module):
-    """
-    Модель для предсказания цены на основе LSTM с attention.
-    
-    Параметры:
-    - seq_length: длина входной последовательности.
-    - num_features: число входных признаков.
-    - output_dim: размер выхода (обычно 1).
-    - lstm_units: число скрытых единиц в слое LSTM.
-    - fc_units: число нейронов в полносвязном слое.
-    - dropout_rate: вероятность dropout-а.
-    """
-    def __init__(self, seq_length, num_features, output_dim, lstm_units, fc_units, dropout_rate):
-        super(PricePredictionModel, self).__init__()
-        self.seq_length = seq_length
-        self.num_features = num_features
-        
-        self.lstm = nn.LSTM(input_size=num_features, hidden_size=lstm_units, num_layers=1, batch_first=True)
-        self.dropout = nn.Dropout(dropout_rate)
-        self.attention = AttentionLayer(hidden_dim=lstm_units, timesteps=seq_length)
-        self.fc1 = nn.Linear(lstm_units, fc_units)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(fc_units, output_dim)
-    
-    def forward(self, x):
-        # x: (batch, seq_length, num_features)
-        lstm_out, _ = self.lstm(x)        # (batch, seq_length, lstm_units)
-        x = self.dropout(lstm_out)
-        attn_out = self.attention(x)      # (batch, lstm_units)
-        x = self.fc1(attn_out)
-        x = self.relu(x)
-        x = self.dropout(x)
-        x = self.fc2(x)
-        return x
+    def __init__(self,seq_length,num_features,output_dim,lstm_units,fc_units,dropout):
+        super().__init__()
+        self.lstm = nn.LSTM(num_features,lstm_units, batch_first=True)
+        self.dropout = nn.Dropout(dropout)
+        self.attn = AttentionLayer(lstm_units,seq_length)
+        self.fc1 = nn.Linear(lstm_units,fc_units)
+        self.fc2 = nn.Linear(fc_units,output_dim)
+        self.relu= nn.ReLU()
+    def forward(self,x):
+        o,_=self.lstm(x)
+        o=self.dropout(o)
+        a=self.attn(o)
+        h=self.relu(self.fc1(a))
+        return self.fc2(self.dropout(h))
+
 
 # ==========================
 # Модель TCN (Temporal Convolutional Network)
