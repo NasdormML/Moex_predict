@@ -155,10 +155,10 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 <table>
   <tr>
     <td valign="top">
-      <img src="https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066" width="500" height="260" alt="График 1">
+      <img src="https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066" alt="График 1">
     </td>
     <td valign="top">
-      <img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b" width="500" height="260" alt="График 2">
+      <img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b" alt="График 2">
     </td>
   </tr>
 </table>
@@ -174,7 +174,7 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 
 # GAZP ticker
 
-<img src="https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030" width="600" height="350">
+<img src="https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030">
 
 
 ### TCN Model Training Results
@@ -187,7 +187,7 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 
 # ROSN ticker 
 
-<img src="https://github.com/user-attachments/assets/1f8ccaa2-942e-4810-81c4-ae0fe939f349" width="600" height="350">
+<img src="https://github.com/user-attachments/assets/1f8ccaa2-942e-4810-81c4-ae0fe939f349">
 
 ### TFE Model Training Results
   | Performance Metrics | Validation Metrics  |
