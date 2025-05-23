@@ -13,7 +13,7 @@
 
 
 
-**MOEX Price Prediction** is a project that forecasts Moscow Exchange stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA), and a deep learning model built with PyTorch. The project provides an end-to-end solution—from data preprocessing and model training to serving predictions via a FastAPI REST API.
+**MOEX Price Prediction** is a project that forecasts Moscow Exchange stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA, MACD and etc), and a deep learning model built with PyTorch. The project provides an end-to-end solution—from data preprocessing and model training to serving predictions via a FastAPI REST API.
 
 ---
 
@@ -72,7 +72,8 @@ MOEX_PREDICT/
 │   └── v1.1 ...                   # New folder create after retrain models
 ├── notebooks/
 │   ├── Best_GAZP.ipynb            # Notebook for TCN model analysis and experiments
-│   └── Best_SBER.ipynb            # Notebook for LSTM model analysis and experiments
+│   ├── Best_SBER.ipynb            # Notebook for LSTM and TFE models analysis and experiments
+|   └── Best_ROSN.ipynb            # Notebook for TFE only model analysis and experiments
 └── README.md                      # Project documentation (this file)
 ```
 
@@ -151,19 +152,30 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 
 # SBER ticker 
 
-![image](https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066)
+<table>
+  <tr>
+    <td valign="top">
+      <img src="https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066" width="500" height="260" alt="График 1">
+    </td>
+    <td valign="top">
+      <img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b" width="500" height="260" alt="График 2">
+    </td>
+  </tr>
+</table>
 
-### LSTM Model Training Results
-  | Performance Metrics | Validation Metrics  |
-  |---------------------|---------------------|
-  | MSE (RUB^2):        | 19.869              |
-  | RMSE (RUB):         | 4.457               |
-  | MAE (RUB):          | 3.111               |
-  | MAPE:               | 1.20%               |
+
+### LSTM Model Training Results Vs TFE Model Training Results   
+  | Performance Metrics | LSTM Val Metrics    | TFE Val Metrics     |
+  |---------------------|---------------------|---------------------|  
+  | MSE (RUB^2):        | 19.869              | 11.370              | 
+  | RMSE (RUB):         | 4.457               | 3.372               |
+  | MAE (RUB):          | 3.111               | 2.420               |
+  | MAPE:               | 1.20%               | 0.97%               |
 
 # GAZP ticker
 
-![image](https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030)
+<img src="https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030" width="600" height="350">
+
 
 ### TCN Model Training Results
   | Performance Metrics | Validation Metrics  |
@@ -173,6 +185,17 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
   | MAE (RUB):          | 3.035               |
   | MAPE:               | 2.08%               |
 
+# ROSN ticker 
+
+<img src="https://github.com/user-attachments/assets/1f8ccaa2-942e-4810-81c4-ae0fe939f349" width="600" height="350">
+
+### TFE Model Training Results
+  | Performance Metrics | Validation Metrics  |
+  |---------------------|---------------------|
+  | MSE (RUB^2):        | 61.502              |
+  | RMSE (RUB):         | 7.842               |
+  | MAE (RUB):          | 5.653               |
+  | MAPE:               | 1.10%               |
 ---
 
 ## License
