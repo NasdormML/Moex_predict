@@ -150,19 +150,9 @@ Below is the PyTorch model training graph, illustrating the model's convergence 
 
 *Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
 
-# SBER ticker 
+# SBER ticker
 
-<table>
-  <tr>
-    <td valign="top">
-      <img src="https://github.com/user-attachments/assets/8d28ae7a-80c5-411c-b087-cf9ce07bf066" alt="График 1">
-    </td>
-    <td valign="top">
-      <img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b" alt="График 2">
-    </td>
-  </tr>
-</table>
-
+<img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b">
 
 ### LSTM Model Training Results Vs TFE Model Training Results   
   | Performance Metrics | LSTM Val Metrics    | TFE Val Metrics     |
