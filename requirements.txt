@@ -27,4 +27,4 @@ omegaconf==2.3.0
 matplotlib==3.8.0
 
 # Retry logic for requests
-urllib3==2.0.4
+urllib3>=2.2.2
