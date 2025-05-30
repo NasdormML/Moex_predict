@@ -1,19 +1,18 @@
 # MOEX Price Prediction
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![Pandas](https://img.shields.io/badge/pandas-2.2.3-%23150458?logo=pandas&logoColor=white)
-![Numpy](https://img.shields.io/badge/numpy-2.2.4-%23013243?logo=numpy&logoColor=white)
-![Pytorch](https://img.shields.io/badge/torch-2.6.0-%23EE4C2C?logo=pytorch&logoColor=white)
-![MLflow](https://img.shields.io/badge/mlflow-2.21.3-%23004750?logo=mlflow&logoColor=white)
+![Hydra](https://img.shields.io/badge/hydra-1.3.2-blue)
+![Pandas](https://img.shields.io/badge/pandas-2.2.3-%23150458?logo=pandas\&logoColor=white)
+![Numpy](https://img.shields.io/badge/numpy-2.2.4-%23013243?logo=numpy\&logoColor=white)
+![PyTorch](https://img.shields.io/badge/torch-2.6.0-%23EE4C2C?logo=pytorch\&logoColor=white)
+![MLflow](https://img.shields.io/badge/mlflow-2.21.3-%23004750?logo=mlflow\&logoColor=white)
 ![Apscheduler](https://img.shields.io/badge/apscheduler-3.11.0-blue)
-![Requests](https://img.shields.io/badge/requests-2.32.3-%23BA1200?logo=requests&logoColor=white)
-![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-%23009ECE?logo=fastapi&logoColor=white)
-![Pydantic](https://img.shields.io/badge/pydantic-2.11.3-%23008BD3?logo=pydantic&logoColor=white)
-![Uvicorn](https://img.shields.io/badge/uvicorn-0.34.1-%232C3E50?logo=uvicorn&logoColor=white)
+![Requests](https://img.shields.io/badge/requests-2.32.3-%23BA1200?logo=requests\&logoColor=white)
+![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-%23009ECE?logo=fastapi\&logoColor=white)
+![Pydantic](https://img.shields.io/badge/pydantic-2.11.3-%23008BD3?logo=pydantic\&logoColor=white)
+![Uvicorn](https://img.shields.io/badge/uvicorn-0.34.1-%232C3E50?logo=uvicorn\&logoColor=white)
 
-
-
-**MOEX Price Prediction** is a project that forecasts Moscow Exchange stock prices (e.g., SBER) using historical data, technical indicators (RSI, SMA, MACD and etc), and a deep learning model built with PyTorch. The project provides an end-to-end solution—from data preprocessing and model training to serving predictions via a FastAPI REST API.
+**MOEX Price Prediction** is an end-to-end forecasting solution for Moscow Exchange (MOEX) stocks (e.g. SBER, GAZP, ROSN) using historical data, technical indicators, and deep learning with PyTorch.
 
 ---
 
@@ -21,173 +20,189 @@
 
 1. [Project Overview](#project-overview)
 2. [Key Features](#key-features)
-3. [Architecture and Structure](#architecture-and-structure)
-4. [Technologies and Tools](#technologies-and-tools)
-5. [Installation and Setup](#installation-and-setup)
-6. [API and Demo](#api-and-demo)
-7. [Model Training and Visualization](#model-training-and-visualization)
-8. [License](#license)
+3. [Architecture & Structure](#architecture--structure)
+4. [Technologies](#technologies)
+5. [Hydra Configuration](#hydra-configuration)
+6. [Installation & Setup](#installation--setup)
+7. [Usage](#usage)
+8. [API Reference](#api-reference)
+9. [Model Training & Visualization](#model-training--visualization)
+10. [License](#license)
 
 ---
 
 ## Project Overview
 
-**MOEX Price Prediction** is designed to forecast stock prices (e.g., SBER) by combining historical market data with technical indicators like RSI and SMA. The project uses a PyTorch-based model (incorporating LSTM with an Attention mechanism) to generate predictions, which are then served through a REST API built with FastAPI.
+This project fetches MOEX historical end-of-day data, computes indicators (RSI, SMA, MACD, Bollinger Bands, ATR), trains PyTorch models (LSTM‑Attention, TCN, Transformer) via Hydra‑powered experiments, and serves predictions through a FastAPI REST API.
 
 ---
 
 ## Key Features
 
-- **End-to-End Pipeline:** Covers data fetching, preprocessing, model training, and API deployment.
-- **Deep Learning Model:** Utilizes a PyTorch model for time-series forecasting.
-- **Real-time Predictions:** FastAPI offers a RESTful interface for instant predictions.
-- **Interactive Visualization:** Includes training graphs to monitor model performance.
+* **Modular Architecture:** Clear separation between data ingestion, preprocessing, model training, and serving.
+* **Hydra Experiments:** Easily switch models (`lstm`, `tcn`, `tft`) and tickers (`SBER`, `GAZP`, `ROSN`, etc.) with command-line overrides.
+* **Versioned Artifacts:** Models and scalers saved under `saved_models/v{version}`; metadata tracks versions and architecture.
+* **Auto‑Retraining:** Optional performance monitoring triggers retraining via MLflow and Optuna.
+* **Live API:** FastAPI endpoint for on‑demand predictions.
 
 ---
 
-## Architecture and Structure
+## Architecture & Structure
 
 ```plaintext
 MOEX_PREDICT/
 ├── app/
-│   ├── __init__.py
-│   ├── data.py                    # Data fetching from MOEX and CBR
-│   ├── main.py                    # FastAPI entry point
-│   ├── model_manager.py           # Model and scaler loading utilities
-│   ├── models.py                  # PyTorch model definition (LSTM + Attention)
-│   ├── monitoring.py              # MLflow check on error performance
-│   ├── predict.py                 # Prediction logic using the trained model
-│   ├── preprocessing.py           # Data preprocessing, RSI, SMA calculation, etc.
-│   ├── scheduler.py               # Background loading of the "true" closing price (beta)
-│   └── transfer_learning.py       # Retraining script
-├── history/                       # Save metadate & model predict
-├── models/
-│   ├── v1
-│   │   ├── GAZP_model.pth         # Saved PyTorch model weight
-│   │   ├── GAZP_scaler_X.pkl      # RobustScaler for input features
-│   │   ├── GAZP_scaler_y.pkl      # RobustScaler for input features
-│   │   ├── SBER_model.pth         # Saved PyTorch model weights
-│   │   ├── SBER_scaler_X.pkl      # RobustScaler for input features
-│   │   └── SBER_scaler_y.pkl      # RobustScaler for target
-│   └── v1.1 ...                   # New folder create after retrain models
-├── notebooks/
-│   ├── Best_GAZP.ipynb            # Notebook for TCN model analysis and experiments
-│   ├── Best_SBER.ipynb            # Notebook for LSTM and TFE models analysis and experiments
-|   └── Best_ROSN.ipynb            # Notebook for TFE only model analysis and experiments
-└── README.md                      # Project documentation (this file)
+│   ├── data.py                 # MOEX & CBR data loader + DataLoader factory
+│   ├── preprocessing.py        # Indicator calculations
+│   ├── models/                 # Model definitions and factory
+│   │   ├── attention_lstm.py
+│   │   ├── tcn.py
+│   │   ├── tft.py
+│   │   └── factory.py
+│   ├── model_manager.py       # Loading versioned models & scalers
+│   ├── transfer_learning.py   # Retraining logic & metadata
+│   ├── predict.py             # Prediction wrapper
+│   ├── monitoring.py          # Performance validation
+│   └── main.py                # FastAPI application
+├── conf/                      # Hydra configuration
+│   ├── config.yaml
+│   ├── data/
+│   │   └── default.yaml       # Data loader settings
+│   ├── model/
+│   │   ├── lstm.yaml          # LSTM params
+│   │   ├── tcn.yaml           # TCN params
+│   │   └── tft.yaml           # Transformer params
+│   └── train/
+│       └── default.yaml       # Training settings & versioning
+├── saved_models/              # Versioned model artifacts
+│   ├── v1/
+│   │   ├── SBER_model.pth
+│   │   ├── SBER_scaler_X.pkl
+│   │   ├── SBER_scaler_y.pkl
+│   │   └── ...
+│   └── v2/ ...
+├── train.py                   # Hydra entrypoint for experiments
+├── Makefile                   # install, run api, mlflow, clean
+└── README.md                  # This file
 ```
 
 ---
 
-## Technologies and Tools
+## Technologies
 
-- **Programming Language:** Python 3.10+
-- **Deep Learning Framework:** PyTorch 2.5.1+
-- **Web Framework:** FastAPI (with Uvicorn), MLflow
-- **Data Analysis Libraries:** Pandas, NumPy, scikit-learn
-- **Visualization:** Matplotlib, Seaborn
-- **Version Control:** Git and GitHub
+* **Python:** 3.10+
+* **Config:** Hydra (1.3.2), OmegaConf
+* **Data:** Pandas, NumPy, scikit-learn
+* **Deep Learning:** PyTorch 2.6
+* **Experiment Tracking:** MLflow 2.21
+* **Web API:** FastAPI, Uvicorn
+* **Scheduling:** APScheduler
 
 ---
 
-## Installation and Setup
+## Hydra Configuration
 
-### Step 1. Clone the Repository
+All experiments are driven by `conf/config.yaml`. Override sections via CLI:
 
 ```bash
+# Train TCN on GAZP, version v2:
+python train.py model=tcn data.ticker=GAZP train.version=v2
+
+# Train TFT on ROSN from 2013 to today:
+python train.py model=tft data.ticker=ROSN data.start_date=2013-01-01 train.epochs=60
+```
+
+See `conf/` for defaults.
+
+---
+
+## Installation & Setup
+
+```bash
+# 1. Clone
 git clone https://github.com/NasdormML/Moex_predict.git
-cd MOEX_PREDICT
-```
+cd Moex_predict
 
-### Step 2. Create a Virtual Environment
-
-```bash
+# 2. Virtual env
 python -m venv venv
-source venv/bin/activate   # On Windows: venv\Scripts\activate
-```
+source venv/bin/activate
 
-### Step 3. Run Makefile
-Makefile will set dependencies and run MLflow with Fastapi.
+# 3. Install deps
+make install
 
-```bash
+# 4. Run all
 make run
 ```
-MLflow will be available in [http://127.0.0.1:5001](http://127.0.0.1:5001).
 
-Access the API at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for interactive testing.
-
-### API and Demo
-
-## Example API Request
-
-**Endpoint:** `POST /predict`
-
-**Sample Request:**
-
-```json
-{
-  "ticker": "SBER",
-  "start_date": "2025-03-01",
-  "end_date": "2025-04-05"
-}
-```
-
-**Sample Response:**
-
-```json
-{
-  "ticker": "SBER",
-  "predicted_price": 297.791015625,
-  "date": "2025-04-06"
-}
-```
+* **MLflow UI:** [http://127.0.0.1:5001](http://127.0.0.1:5001)
+* **API Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
-## Model Training and Visualization
+## Usage
 
-Below is the PyTorch model training graph, illustrating the model's convergence and performance:
+1. **Train a model:**
 
-*Description:* The graph displays the progression of the loss function and key metrics as the PyTorch model learns from the training data.
+   ```bash
+   python train.py model=lstm data.ticker=SBER
+   ```
 
-# SBER ticker
+2. **Serve predictions:**
+
+   ```bash
+   make api
+   curl -X POST "http://127.0.0.1:8000/predict" \
+        -H "Content-Type: application/json" \
+        -d '{"ticker":"SBER","start_date":"2025-01-01","end_date":"2025-05-01"}'
+   ```
+
+---
+
+## API Reference
+
+**POST /predict**
+
+* **Body:** `{ ticker: str, start_date: YYYY-MM-DD, end_date: YYYY-MM-DD }`
+* **Response:**
+  ```bash
+  {
+  "ticker": "SBER",
+  "predicted_price": 292.4643249511719,
+  "date": "2025-05-30"
+  }
+  ```
+
+---
+
+## Model Training & Visualization
 
 <img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b">
 
-### LSTM Model Training Results Vs TFE Model Training Results   
-  | Performance Metrics | LSTM Val Metrics    | TFE Val Metrics     |
-  |---------------------|---------------------|---------------------|  
-  | MSE (RUB^2):        | 19.869              | 11.370              | 
-  | RMSE (RUB):         | 4.457               | 3.372               |
-  | MAE (RUB):          | 3.111               | 2.420               |
-  | MAPE:               | 1.20%               | 0.97%               |
+**SBER Performance**
 
-# GAZP ticker
+| Model       | MSE   | RMSE | MAE  | MAPE  |
+| ----------- | ----- | ---- | ---- | ----- |
+| LSTM-Attn   | 19.87 | 4.46 | 3.11 | 1.20% |
+| Transformer | 11.37 | 3.37 | 2.42 | 0.97% |
 
 <img src="https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030">
 
+**GAZP Performance**
 
-### TCN Model Training Results
-  | Performance Metrics | Validation Metrics  |
-  |---------------------|---------------------|
-  | MSE (RUB^2):        | 18.311              |
-  | RMSE (RUB):         | 4.279               |
-  | MAE (RUB):          | 3.035               |
-  | MAPE:               | 2.08%               |
-
-# ROSN ticker 
+| Model | MSE   | RMSE | MAE  | MAPE  |
+| ----- | ----- | ---- | ---- | ----- |
+| TCN   | 18.31 | 4.28 | 3.04 | 2.08% |
 
 <img src="https://github.com/user-attachments/assets/1f8ccaa2-942e-4810-81c4-ae0fe939f349">
 
-### TFE Model Training Results
-  | Performance Metrics | Validation Metrics  |
-  |---------------------|---------------------|
-  | MSE (RUB^2):        | 61.502              |
-  | RMSE (RUB):         | 7.842               |
-  | MAE (RUB):          | 5.653               |
-  | MAPE:               | 1.10%               |
+**ROSN Performance**
+
+| Model       | MSE   | RMSE | MAE  | MAPE  |
+| ----------- | ----- | ---- | ---- | ----- |
+| Transformer | 61.50 | 7.84 | 5.65 | 1.10% |
+
 ---
 
 ## License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
