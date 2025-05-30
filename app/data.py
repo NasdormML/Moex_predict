@@ -72,7 +72,7 @@ def get_dataloaders(
     start_date: str = None,
     end_date: str = None,
 ):
-    # 1) Определяем даты
+    # Определяем даты
     if end_date:
         end_dt = datetime.fromisoformat(end_date)
     else:
@@ -84,11 +84,11 @@ def get_dataloaders(
 
     start_str = start_dt.strftime("%Y-%m-%d")
     end_str   = end_dt.strftime("%Y-%m-%d")
-    # 1) Тикер
+    # Тикер
     df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", start_str, end_str)
-    # 2) Индекс IMOEX
+    # Индекс IMOEX
     df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", start_str, end_str)
-    # 3) USD
+    # USD
     df_u = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", start_str, end_str)
     if df_u is None or df_u.empty:
         dates = pd.date_range(start_str, end_str)
@@ -107,7 +107,6 @@ def get_dataloaders(
         df["TRADEDATE"] = pd.to_datetime(df.get("BEGIN", df["TRADEDATE"])).dt.normalize()
         df.rename(columns=ren, inplace=True)
 
-    # Merge & очистка
     merged = (
         df_t[["TRADEDATE", f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}"]]
         .merge(df_i[["TRADEDATE", "CLOSE_IMOEX"]], on="TRADEDATE", how="outer")
@@ -117,7 +116,7 @@ def get_dataloaders(
         .reset_index(drop=True)
     )
 
-    # 4) Предобработка (дополни 11 индикаторов)
+    # Предобработка
     from app.preprocessing import preprocess_data
     proc = preprocess_data(merged, ticker)
 
@@ -143,13 +142,13 @@ def get_dataloaders(
     X = np.array(X)
     y = np.array(y).reshape(-1, 1)
 
-    # 6) Масштабирование
+    # Масштабирование
     scaler_X = RobustScaler().fit(X.reshape(-1, X.shape[2]))
     scaler_y = RobustScaler().fit(y)
     Xs = scaler_X.transform(X.reshape(-1, X.shape[2])).reshape(X.shape)
     ys = scaler_y.transform(y)
 
-    # 7) DataLoader
+    # DataLoader
     tensor_x = torch.tensor(Xs, dtype=torch.float32)
     tensor_y = torch.tensor(ys, dtype=torch.float32)
     dataset = TensorDataset(tensor_x, tensor_y)

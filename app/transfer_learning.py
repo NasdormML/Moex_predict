@@ -42,7 +42,6 @@ def save_training_metadata(metadata: dict, version: str = None):
 
 
 # Внутри retrain_model считываем factory_key и params из metadata
-
 def retrain_model(
     ticker: str,
     last_train_datetime: datetime,

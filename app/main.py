@@ -23,10 +23,9 @@ mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"
 mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "MOEX_Price_Prediction"))
 mlflow.pytorch.autolog()
 
-# load all models (reads factory_key + params from metadata)
+# загружаем все модели ( factory_key + params из metadata)
 models_dict = load_models()
 
-# ensure history folder exists
 history_dir = os.getenv("HISTORY_DIR", "history")
 os.makedirs(history_dir, exist_ok=True)
 
@@ -57,8 +56,6 @@ def predict(request: PredictionRequest):
     ticker = request.ticker.upper()
     if ticker not in models_dict:
         raise HTTPException(404, f"Модель для {ticker} не найдена")
-
-    # parse and validate dates
     try:
         req_start = datetime.strptime(request.start_date, "%Y-%m-%d").date()
         req_end   = datetime.strptime(request.end_date,   "%Y-%m-%d").date()
@@ -72,7 +69,7 @@ def predict(request: PredictionRequest):
             "end_date":    request.end_date
         })
 
-        # retrain if needed (uses metadata internally)
+        # переобучение если необходимо (используем metadata)
         metadata       = load_training_metadata()
         last_train_str = metadata.get(ticker)
         last_train     = datetime.strptime(last_train_str, "%Y-%m-%d") if last_train_str else datetime.min
@@ -84,7 +81,6 @@ def predict(request: PredictionRequest):
         )
         mlflow.set_tag("model_version", models_dict[ticker]["model_version"])
 
-        # fetch raw data
         df_t = fetch_moex_eod_data(ticker,        "stock",    "shares", "TQBR", request.start_date, request.end_date)
         df_i = fetch_moex_eod_data("IMOEX",       "stock",    "index",  "SNDX", request.start_date, request.end_date)
         df_u = fetch_moex_eod_data("USD000UTSTOM","currency","selt",   "CETS", request.start_date, request.end_date)
@@ -95,7 +91,6 @@ def predict(request: PredictionRequest):
                 "CLOSE":     [fetch_cbr_usd_rate(d) for d in dates]
             })
 
-        # normalize & rename
         def normalize(df, cols_map):
             df["TRADEDATE"] = pd.to_datetime(df.get("BEGIN", df["TRADEDATE"])).dt.normalize()
             return df.rename(columns=cols_map)
@@ -110,7 +105,6 @@ def predict(request: PredictionRequest):
         df_i = normalize(df_i, {"CLOSE": "CLOSE_IMOEX"})
         df_u = normalize(df_u, {"CLOSE": "CLOSE_USD"})
 
-        # merge & preprocess
         merged = (
             df_t[["TRADEDATE", f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}"]]
             .merge(df_i[["TRADEDATE", "CLOSE_IMOEX"]], on="TRADEDATE", how="outer")
@@ -120,7 +114,6 @@ def predict(request: PredictionRequest):
         )
         proc = preprocess_data(merged, ticker)
 
-        # features for model
         feat_list = [
             f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}",
             "CLOSE_IMOEX", "CLOSE_USD",
@@ -133,19 +126,18 @@ def predict(request: PredictionRequest):
         if X.shape[0] < seq:
             raise HTTPException(422, "Недостаточно данных после предобработки")
 
-        # predict
         pred = predict_price(
             models_dict[ticker]["model"],
             models_dict[ticker]["scaler_X"],
             models_dict[ticker]["scaler_y"],
             X, seq
         )
-        pred = float(pred)  # ensure scalar
+        pred = float(pred)
         if not math.isfinite(pred):
             raise HTTPException(500, "Invalid prediction: non-finite value")
         mlflow.log_metric("predicted_price", pred)
 
-        # save history
+        # сохраняем историю
         date_str = datetime.today().strftime("%Y-%m-%d")
         rec = pd.DataFrame({"TRADEDATE":[date_str],"predicted_price":[pred]})
         pf = os.path.join(history_dir, f"predictions_{ticker}.csv")
@@ -159,7 +151,7 @@ def predict(request: PredictionRequest):
             ok   = validate_model_performance(ticker, real, hist)
             mlflow.log_metric("performance_issue", 0 if ok else 1)
             if not ok:
-                # no cfg passed: retrain_model will read metadata
+                # не нашли cfg: retrain_model будет читать metadata
                 models_dict[ticker] = retrain_model(
                     ticker,
                     datetime.strptime(load_training_metadata()[ticker], "%Y-%m-%d"),
