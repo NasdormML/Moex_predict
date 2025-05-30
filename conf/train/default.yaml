@@ -1,0 +1,4 @@
+version: v1
+model_artifacts_dir: saved_models
+lr: 1e-3
+epochs: 20

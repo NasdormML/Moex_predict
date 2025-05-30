@@ -1,0 +1,8 @@
+# Параметры загрузки данных через MOEX API
+ticker: SBER        # тикер по умолчанию, можно переопределить
+start_date: "2013-01-01"
+end_date: null
+lookback_days: 365
+batch_size: 64
+shuffle: true
+num_workers: 4
