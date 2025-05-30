@@ -1,0 +1,15 @@
+version_base: 1.1
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+
+defaults:
+  - _self_
+  - data: default
+  - model: lstm
+  - train: default
+
+project:
+  name: Moex_predict

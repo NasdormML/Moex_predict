@@ -1,0 +1,7 @@
+name: lstm
+params:
+  seq_length: 20
+  num_features: 18
+  lstm_units: 240
+  fc_units: 127
+  dropout_rate: 0.1335

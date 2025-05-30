@@ -7,15 +7,13 @@ lint:
 	flake8 app
 
 api:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	uvicorn app.main:app --reload --host 0.0.0.0 --port $${API_PORT:-8000}
 
 mlflow:
-	mlflow ui --host 0.0.0.0 --port 5001
+	mlflow ui --host 0.0.0.0 --port $${MLFLOW_PORT:-5001}
 
 run:
-	pip install -r requirements.txt
-	mlflow ui --host 0.0.0.0 --port 5001 & \
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	mlflow ui --host 0.0.0.0 --port $${MLFLOW_PORT:-5001} & uvicorn app.main:app --reload --host 0.0.0.0 --port $${API_PORT:-8000}
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +

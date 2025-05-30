@@ -1,0 +1,8 @@
+name: tcn
+params:
+  seq_length: 20
+  num_features: 18
+  num_channels: [64, 128, 256, 512]
+  kernel_size: 5
+  dropout: 0.28
+  fc_units: 30
