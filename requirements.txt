@@ -4,7 +4,7 @@ numpy==2.2.4
 scikit-learn==1.6.1
 
 # Deep learning
-torch==2.6.0
+torch==2.7.0
 
 # Experiment tracking & HPO
 mlflow==2.21.3
