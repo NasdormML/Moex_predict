@@ -123,14 +123,10 @@ See `conf/` for defaults.
 git clone https://github.com/NasdormML/Moex_predict.git
 cd Moex_predict
 
-# 2. Virtual env
-python -m venv venv
-source venv/bin/activate
-
-# 3. Install deps
+# 2. Create Virtual env & Install deps
 make install
 
-# 4. Run all
+# 3. Run MLflow & FastAPI
 make run
 ```
 
