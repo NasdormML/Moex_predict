@@ -5,3 +5,4 @@ params:
   lstm_units: 240
   fc_units: 127
   dropout_rate: 0.1335
+  output_dim: 1
