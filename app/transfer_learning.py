@@ -1,22 +1,19 @@
-# app/transfer_learning.py
 import os
 import pickle
-import copy
 from datetime import datetime, timedelta
 from typing import Optional
 
 import mlflow
-import torch
-import torch.optim as optim
-import torch.nn as nn
-import pandas as pd
 import numpy as np
-import optuna
-
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from omegaconf import DictConfig
-from app.models.factory import get_model
-from app.data import fetch_moex_eod_data, fetch_cbr_usd_rate
+
+from app.data import fetch_cbr_usd_rate, fetch_moex_eod_data
 from app.preprocessing import preprocess_data
+
 
 def get_metadata_path(version: str = "v1"):
     metadata_dir = os.path.join("history", "metadata")
@@ -58,8 +55,12 @@ def retrain_model(
     metadata = load_training_metadata(version)
 
     # вытаскиваем из metadata или из текущего бандла
-    factory_key = metadata.get(f"{ticker}_factory_key", current_model_bundle.get("factory_key"))
-    model_params = metadata.get(f"{ticker}_model_params", current_model_bundle.get("model_params"))
+    factory_key = metadata.get(
+        f"{ticker}_factory_key", current_model_bundle.get("factory_key")
+    )
+    model_params = metadata.get(
+        f"{ticker}_model_params", current_model_bundle.get("model_params")
+    )
 
     # проверяем, нужно ли дообучение
     last_str = metadata.get(ticker)
@@ -77,44 +78,77 @@ def retrain_model(
 
     df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", start_date, end_date)
     df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", start_date, end_date)
-    df_u = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", start_date, end_date)
+    df_u = fetch_moex_eod_data(
+        "USD000UTSTOM", "currency", "selt", "CETS", start_date, end_date
+    )
     if df_u is None or df_u.empty:
         dates = pd.date_range(start_date, end_date)
-        df_u = pd.DataFrame({"TRADEDATE": dates,
-                             "CLOSE": [fetch_cbr_usd_rate(d) for d in dates]})
+        df_u = pd.DataFrame(
+            {"TRADEDATE": dates, "CLOSE": [fetch_cbr_usd_rate(d) for d in dates]}
+        )
 
     # нормализация и rename
     def prep(df, ren):
-        df["TRADEDATE"] = pd.to_datetime(df.get("BEGIN", df["TRADEDATE"])).dt.normalize()
+        df["TRADEDATE"] = pd.to_datetime(
+            df.get("BEGIN", df["TRADEDATE"])
+        ).dt.normalize()
         return df.rename(columns=ren)
 
-    df_t = prep(df_t, {"OPEN":f"OPEN_{ticker}","HIGH":f"HIGH_{ticker}","LOW":f"LOW_{ticker}","CLOSE":f"CLOSE_{ticker}","VOLUME":f"VOL_{ticker}"})
-    df_i = prep(df_i, {"CLOSE":"CLOSE_IMOEX"})
-    df_u = prep(df_u, {"CLOSE":"CLOSE_USD"})
+    df_t = prep(
+        df_t,
+        {
+            "OPEN": f"OPEN_{ticker}",
+            "HIGH": f"HIGH_{ticker}",
+            "LOW": f"LOW_{ticker}",
+            "CLOSE": f"CLOSE_{ticker}",
+            "VOLUME": f"VOL_{ticker}",
+        },
+    )
+    df_i = prep(df_i, {"CLOSE": "CLOSE_IMOEX"})
+    df_u = prep(df_u, {"CLOSE": "CLOSE_USD"})
 
     merged = (
-        df_t[["TRADEDATE", f"OPEN_{ticker}", f"HIGH_{ticker}", f"LOW_{ticker}", f"CLOSE_{ticker}", f"VOL_{ticker}"]]
+        df_t[
+            [
+                "TRADEDATE",
+                f"OPEN_{ticker}",
+                f"HIGH_{ticker}",
+                f"LOW_{ticker}",
+                f"CLOSE_{ticker}",
+                f"VOL_{ticker}",
+            ]
+        ]
         .merge(df_i[["TRADEDATE", "CLOSE_IMOEX"]], on="TRADEDATE")
         .merge(df_u[["TRADEDATE", "CLOSE_USD"]], on="TRADEDATE")
-        .sort_values("TRADEDATE").ffill().bfill().dropna().reset_index(drop=True)
+        .sort_values("TRADEDATE")
+        .ffill()
+        .bfill()
+        .dropna()
+        .reset_index(drop=True)
     )
     df_proc = preprocess_data(merged, ticker)
 
     # формируем X, y
-    features = [col for col in df_proc.columns if col.startswith((f"OPEN_{ticker}", f"CLOSE_{ticker}"))]
+    features = [
+        col
+        for col in df_proc.columns
+        if col.startswith((f"OPEN_{ticker}", f"CLOSE_{ticker}"))
+    ]
     data = df_proc[features].values.astype(float)
     X_list, y_list = [], []
     close_idx = features.index(f"CLOSE_{ticker}")
     for i in range(len(data) - seq_length):
-        X_list.append(data[i:i+seq_length])
-        y_list.append(data[i+seq_length][close_idx])
+        X_list.append(data[i : i + seq_length])
+        y_list.append(data[i + seq_length][close_idx])
     X_arr = np.array(X_list)
     y_arr = np.array(y_list).reshape(-1, 1)
 
     # масштабирование
     scaler_X = current_model_bundle["scaler_X"]
     scaler_y = current_model_bundle["scaler_y"]
-    X_scaled = scaler_X.transform(X_arr.reshape(-1, X_arr.shape[2])).reshape(X_arr.shape)
+    X_scaled = scaler_X.transform(X_arr.reshape(-1, X_arr.shape[2])).reshape(
+        X_arr.shape
+    )
     y_scaled = scaler_y.transform(y_arr)
 
     X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
@@ -123,8 +157,10 @@ def retrain_model(
     # обучение только fc-слоёв
     model = current_model_bundle["model"]
     for name, param in model.named_parameters():
-        param.requires_grad = ("fc" in name)
-    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=default_lr)
+        param.requires_grad = "fc" in name
+    optimizer = optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=default_lr
+    )
     loss_fn = nn.HuberLoss()
     model.train()
     for e in range(default_epochs):
@@ -136,7 +172,7 @@ def retrain_model(
         mlflow.log_metric("retraining_loss", loss.item(), step=e)
 
     # сохраняем новую версию
-    maj, min_ = version.lstrip("v").split('.')
+    maj, min_ = version.lstrip("v").split(".")
     new_ver = f"v{maj}.{int(min_)+1}"
     artifact_root = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
     out_dir = os.path.join(artifact_root, new_ver)

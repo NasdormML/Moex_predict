@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class AttentionLayer(nn.Module):
     def __init__(self, hidden_dim, timesteps):
         super().__init__()
@@ -15,7 +16,9 @@ class AttentionLayer(nn.Module):
 
 
 class PricePredictionModel(nn.Module):
-    def __init__(self, seq_length, num_features, output_dim, lstm_units, fc_units, dropout_rate):
+    def __init__(
+        self, seq_length, num_features, output_dim, lstm_units, fc_units, dropout_rate
+    ):
         super().__init__()
         self.lstm = nn.LSTM(num_features, lstm_units, batch_first=True)
         self.dropout = nn.Dropout(dropout_rate)

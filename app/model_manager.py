@@ -1,8 +1,10 @@
 import os
 import pickle
+
 import torch
-from app.transfer_learning import load_training_metadata
+
 from app.models.factory import get_model
+from app.transfer_learning import load_training_metadata
 
 ARTIFACTS_ROOT = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
 DEFAULT_MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
@@ -12,8 +14,8 @@ TICKER_CONFIGS = {
     "SBER": {
         "default_factory": "lstm",
         "model_file": "SBER_model.pth",
-        "scaler_x":   "SBER_scaler_X.pkl",
-        "scaler_y":   "SBER_scaler_y.pkl",
+        "scaler_x": "SBER_scaler_X.pkl",
+        "scaler_y": "SBER_scaler_y.pkl",
         "params": {
             "seq_length": 20,
             "num_features": 18,
@@ -26,8 +28,8 @@ TICKER_CONFIGS = {
     "GAZP": {
         "default_factory": "tcn",
         "model_file": "GAZP_model.pth",
-        "scaler_x":   "GAZP_scaler_X.pkl",
-        "scaler_y":   "GAZP_scaler_y.pkl",
+        "scaler_x": "GAZP_scaler_X.pkl",
+        "scaler_y": "GAZP_scaler_y.pkl",
         "params": {
             "num_features": 18,
             "num_channels": [64, 128, 256, 512],
@@ -39,8 +41,8 @@ TICKER_CONFIGS = {
     "ROSN": {
         "default_factory": "tft",
         "model_file": "ROSN_model.pth",
-        "scaler_x":   "ROSN_scaler_X.pkl",
-        "scaler_y":   "ROSN_scaler_y.pkl",
+        "scaler_x": "ROSN_scaler_X.pkl",
+        "scaler_y": "ROSN_scaler_y.pkl",
         "params": {
             "seq_length": 15,
             "num_features": 18,
@@ -64,8 +66,8 @@ def load_models():
 
         model_dir = os.path.join(ARTIFACTS_ROOT, version)
         path_model = os.path.join(model_dir, cfg["model_file"])
-        path_sx    = os.path.join(model_dir, cfg["scaler_x"])
-        path_sy    = os.path.join(model_dir, cfg["scaler_y"])
+        path_sx = os.path.join(model_dir, cfg["scaler_x"])
+        path_sy = os.path.join(model_dir, cfg["scaler_y"])
         if not all(os.path.exists(p) for p in (path_model, path_sx, path_sy)):
             continue
 

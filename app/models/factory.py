@@ -1,10 +1,11 @@
 from importlib import import_module
 
 AVAILABLE = {
-  "lstm": "app.models.attention_lstm",
-  "tcn":  "app.models.tcn",
-  "tft":  "app.models.tft",
+    "lstm": "app.models.attention_lstm",
+    "tcn": "app.models.tcn",
+    "tft": "app.models.tft",
 }
+
 
 def get_model(name: str, **params):
     if name not in AVAILABLE:

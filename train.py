@@ -1,13 +1,15 @@
 import os
 import pickle
-import torch
-import hydra
 from datetime import datetime
+
+import hydra
+import torch
 from omegaconf import DictConfig
 
 from app.data import get_dataloaders
 from app.models.factory import get_model
 from app.transfer_learning import load_training_metadata, save_training_metadata
+
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig):
@@ -65,10 +67,11 @@ def main(cfg: DictConfig):
     md = load_training_metadata(version)
     md[ticker] = datetime.today().strftime("%Y-%m-%d")
     md[f"{ticker}_model_version"] = version
-    md[f"{cfg.data.ticker}_factory_key"] = cfg.model.name 
+    md[f"{cfg.data.ticker}_factory_key"] = cfg.model.name
     md[f"{ticker}_model_params"] = cfg.model.params
     save_training_metadata(md, version)
     print(f"Updated training metadata for {ticker} version {version}")
+
 
 if __name__ == "__main__":
     main()
