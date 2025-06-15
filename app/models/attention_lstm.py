@@ -15,7 +15,7 @@ class AttentionLayer(nn.Module):
         return torch.sum(x * alpha, dim=1)
 
 
-class PricePredictionModel(nn.Module):
+class LSTMModel(nn.Module):
     def __init__(
         self, seq_length, num_features, output_dim, lstm_units, fc_units, dropout_rate
     ):
@@ -36,4 +36,4 @@ class PricePredictionModel(nn.Module):
 
 
 def build_model(**kwargs):
-    return PricePredictionModel(**kwargs)
+    return LSTMModel(**kwargs)
