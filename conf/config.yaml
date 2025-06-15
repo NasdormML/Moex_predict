@@ -10,6 +10,7 @@ defaults:
   - data: default
   - model: lstm
   - train: default
+  - optimization: default
 
 project:
   name: Moex_predict

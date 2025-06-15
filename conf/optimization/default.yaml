@@ -1,0 +1,63 @@
+enable: false
+n_trials: 10
+epochs_per_trial: 5
+weight_decay: 1e-5
+lr_range: [1e-4, 1e-2]
+use_scheduler: true
+scheduler_factor: 0.5
+scheduler_patience: 1
+use_hyperband: false
+sh_reduction_factor: 3
+n_startup_trials: 5
+n_jobs: 1
+
+search_space:
+  # TFT
+  d_model:
+    - 32
+    - 64
+    - 96
+    - 128
+  n_heads:
+    - 1
+    - 2
+    - 4
+    - 8
+  n_layers:
+    - 1
+    - 2
+    - 3
+  d_ff:
+    - 128
+    - 256
+    - 384
+    - 512
+  dropout:
+    - 0.0
+    - 0.1
+    - 0.2
+    - 0.3
+  # LSTM
+  lstm_units:
+    - 64
+    - 128
+    - 240
+    - 320
+  fc_units:
+    - 64
+    - 127
+    - 256
+  dropout_rate:
+    - 0.0
+    - 0.1
+    - 0.2
+    - 0.3
+  # TCN
+  num_channels:
+    - [64, 128]
+    - [128, 256, 512]
+    - [64, 128, 256, 512]
+  kernel_size:
+    - 3
+    - 5
+    - 7

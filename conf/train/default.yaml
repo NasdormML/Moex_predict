@@ -1,4 +1,6 @@
-version: v1
+epochs: 60
+lr: 0.00262
+weight_decay: 1e-5
+seed: 42
 model_artifacts_dir: saved_models
-lr: 1e-3
-epochs: 20
+version: v1

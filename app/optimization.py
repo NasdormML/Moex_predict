@@ -1,0 +1,115 @@
+from importlib import import_module
+
+import optuna
+import torch
+from omegaconf import DictConfig, OmegaConf
+
+from app.models.factory import AVAILABLE
+
+
+def build_model_and_lr(model_name: str, model_cfg: dict, opt_cfg: DictConfig, trial):
+    # Learning rate
+    lr = trial.suggest_float("learning_rate", *opt_cfg.lr_range, log=True)
+
+    # Подготовка параметров модели
+    # Конвертируем search_space в обычный dict
+    search_space = OmegaConf.to_container(opt_cfg.search_space, resolve=True)
+    params = {}
+    fixed_keys = {"seq_length", "num_features", "output_dim"}
+    for key, base_val in model_cfg.items():
+        if key in fixed_keys:
+            params[key] = base_val
+        elif key in search_space:
+            # выбираем из заданного списка категорий
+            params[key] = trial.suggest_categorical(key, search_space[key])
+        else:
+            params[key] = base_val
+
+    # Импорт и создание модели через фабрику
+    module_path = AVAILABLE.get(model_name)
+    if not module_path:
+        raise ValueError(f"Unknown model: {model_name}")
+    module = import_module(module_path)
+    model = module.build_model(**params)
+    return model, lr
+
+
+def get_scheduler_if(opt_cfg: DictConfig, optimizer):
+    """
+    Возвращает ReduceLROnPlateau scheduler, если включен, иначе None.
+    """
+    if opt_cfg.use_scheduler:
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            factor=opt_cfg.scheduler_factor,
+            patience=opt_cfg.scheduler_patience,
+            mode="min",
+        )
+    return None
+
+
+def train_one_epoch(model: torch.nn.Module, dataloader, optimizer, criterion, device):
+    model.train()
+    total_loss = 0.0
+    for X, y in dataloader:
+        X, y = X.to(device), y.to(device).squeeze(-1)
+        optimizer.zero_grad()
+        preds = model(X).squeeze(-1)
+        loss = criterion(preds, y)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+        total_loss += loss.item()
+    return total_loss / len(dataloader)
+
+
+def evaluate(model: torch.nn.Module, dataloader, criterion, device):
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for X, y in dataloader:
+            X, y = X.to(device), y.to(device).squeeze(-1)
+            total_loss += criterion(model(X).squeeze(-1), y).item()
+    return total_loss / len(dataloader)
+
+
+def objective(trial: optuna.Trial, train_dl, val_dl, cfg: DictConfig, device):
+    model_cfg = OmegaConf.to_container(cfg.model.params, resolve=True)
+    model, lr = build_model_and_lr(cfg.model.name, model_cfg, cfg.optimization, trial)
+    model.to(device)
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=lr, weight_decay=cfg.optimization.weight_decay
+    )
+    scheduler = get_scheduler_if(cfg.optimization, optimizer)
+    criterion = torch.nn.HuberLoss()
+
+    for epoch in range(cfg.optimization.epochs_per_trial):
+        train_one_epoch(model, train_dl, optimizer, criterion, device)
+        val_loss = evaluate(model, val_dl, criterion, device)
+
+        trial.report(val_loss, epoch)
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned()
+        if scheduler:
+            scheduler.step(val_loss)
+    return val_loss
+
+
+def optimize_model(train_dl, val_dl, cfg: DictConfig, device=None):
+    sampler = optuna.samplers.TPESampler(seed=cfg.optimization.n_startup_trials)
+    pruner = (
+        optuna.pruners.HyperbandPruner(
+            reduction_factor=cfg.optimization.sh_reduction_factor,
+            min_early_stopping_rate=cfg.optimization.n_startup_trials,
+        )
+        if cfg.optimization.use_hyperband
+        else optuna.pruners.MedianPruner()
+    )
+    study = optuna.create_study(direction="minimize", sampler=sampler, pruner=pruner)
+    study.optimize(
+        lambda t: objective(t, train_dl, val_dl, cfg, device),
+        n_trials=cfg.optimization.n_trials,
+        n_jobs=cfg.optimization.n_jobs,
+    )
+    return study.best_params, study
