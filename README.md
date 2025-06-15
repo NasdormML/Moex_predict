@@ -11,6 +11,8 @@
 ![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-%23009ECE?logo=fastapi\&logoColor=white)
 ![Pydantic](https://img.shields.io/badge/pydantic-2.11.3-%23008BD3?logo=pydantic\&logoColor=white)
 ![Uvicorn](https://img.shields.io/badge/uvicorn-0.34.1-%232C3E50?logo=uvicorn\&logoColor=white)
+![Flake8](https://img.shields.io/badge/code%20style-Flake8-4183C4?logo=flake8&logoColor=white)
+
 
 **MOEX Price Prediction** is an end-to-end forecasting solution for Moscow Exchange (MOEX) stocks (e.g. SBER, GAZP, ROSN) using historical data, technical indicators, and deep learning with PyTorch.
 
@@ -33,7 +35,7 @@
 
 ## Project Overview
 
-This project fetches MOEX historical end-of-day data, computes indicators (RSI, SMA, MACD, Bollinger Bands, ATR), trains PyTorch models (LSTM‑Attention, TCN, Transformer) via Hydra‑powered experiments, and serves predictions through a FastAPI REST API.
+This project fetches MOEX historical end‑of‑day data (for **any ticker** available via the MOEX API in `app/data.py`), computes technical indicators (RSI, SMA, MACD, Bollinger Bands, ATR), trains PyTorch models (LSTM‑Attention, TCN, Transformer) via Hydra‑powered experiments, and serves predictions through a FastAPI REST API. Check [Hydra Configuration](#hydra-configuration).
 
 ---
 
@@ -72,6 +74,9 @@ MOEX_PREDICT/
 │   │   ├── lstm.yaml          # LSTM params
 │   │   ├── tcn.yaml           # TCN params
 │   │   └── tft.yaml           # Transformer params
+│   ├── optimization
+│   │   └── default.yaml       # HPO settings
+│   │
 │   └── train/
 │       └── default.yaml       # Training settings & versioning
 ├── saved_models/              # Versioned model artifacts
@@ -106,10 +111,21 @@ All experiments are driven by `conf/config.yaml`. Override sections via CLI:
 
 ```bash
 # Train TCN on GAZP, version v2:
-python train.py model=tcn data.ticker=GAZP train.version=v2
+python3 train.py \
+   model=tcn \
+   data.ticker=GAZP \
+   train.version=v2
 
-# Train TFT on ROSN from 2013 to today:
-python train.py model=tft data.ticker=ROSN data.start_date=2013-01-01 train.epochs=60
+# Train model with HPO:
+ python3 train.py \
+  model=lstm \
+  data.ticker=ROSN \
+  data.start_date=2013-01-01 \
+  train.epochs=40 \
+  train.version=v2 \
+  optimization.enable=true \
+  optimization.n_trials=30 \
+  optimization.epochs_per_trial=20
 ```
 
 See `conf/` for defaults.
