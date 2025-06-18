@@ -105,5 +105,22 @@ class TCNModel(nn.Module):
         return self.out(h)
 
 
-def build_model(**kwargs):
-    return TCNModel(**kwargs)
+def build_model(
+    seq_length: int,
+    num_features: int,
+    num_channels: list[int],
+    kernel_size: int,
+    fc_units: int,
+    dropout: float,
+) -> nn.Module:
+    """
+    Фабричная функция для создания TCNModel.
+    """
+    return TCNModel(
+        seq_length=seq_length,
+        num_features=num_features,
+        num_channels=num_channels,
+        kernel_size=kernel_size,
+        fc_units=fc_units,
+        dropout=dropout,
+    )

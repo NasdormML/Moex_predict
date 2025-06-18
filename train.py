@@ -70,7 +70,7 @@ def main(cfg: DictConfig):
 
     best_val = float("inf")
     for epoch in range(1, cfg.train.epochs + 1):
-        # train
+        # train loop
         model.train()
         train_loss = 0.0
         for X, y in train_dl:
@@ -84,7 +84,7 @@ def main(cfg: DictConfig):
             train_loss += loss.item()
         train_loss /= len(train_dl)
 
-        # val
+        # validation loop
         model.eval()
         val_loss = 0.0
         all_preds, all_targets = [], []
@@ -128,11 +128,19 @@ def main(cfg: DictConfig):
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_y.pkl"), "wb") as fy:
         pickle.dump(scaler_y, fy)
 
-    # обновляем метаданные
-    md = load_training_metadata(cfg.train.version)
-    md[cfg.data.ticker] = cfg.data.start_date
-    md[f"{cfg.data.ticker}_params"] = cfg.model.params
-    save_training_metadata(md, cfg.train.version)
+    # --- обновляем единый файл training_metadata.pkl ---
+    md = load_training_metadata()
+    # дата последнего обучения — конец датасета
+    md[cfg.data.ticker] = cfg.data.end_date
+    # версия модели
+    md[f"{cfg.data.ticker}_model_version"] = cfg.train.version
+    # фабрика (lstm/tcn/…)
+    md[f"{cfg.data.ticker}_factory_key"] = cfg.model.name
+    # параметры модели (преобразуем в обычный dict)
+    md[f"{cfg.data.ticker}_model_params"] = OmegaConf.to_container(
+        cfg.model.params, resolve=True
+    )
+    save_training_metadata(md)
 
 
 if __name__ == "__main__":

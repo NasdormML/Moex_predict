@@ -15,25 +15,24 @@ from app.data import fetch_cbr_usd_rate, fetch_moex_eod_data
 from app.preprocessing import preprocess_data
 
 
-def get_metadata_path(version: str = "v1"):
+def get_metadata_path():
+    # единый файл, куда мы всегда пишем/читаем последние метаданные
     metadata_dir = os.path.join("history", "metadata")
     os.makedirs(metadata_dir, exist_ok=True)
-    return os.path.join(metadata_dir, f"training_metadata_{version}.pkl")
+    return os.path.join(metadata_dir, "training_metadata.pkl")
 
 
-def load_training_metadata(version: str = None) -> dict:
-    # если version не указан, берём из ENV или по-умолчанию v1
-    version = version or os.getenv("MODEL_VERSION", "v1")
-    path = get_metadata_path(version)
+def load_training_metadata() -> dict:
+    # всегда читаем единый файл
+    path = get_metadata_path()
     if os.path.exists(path):
         with open(path, "rb") as f:
             return pickle.load(f)
     return {}
 
 
-def save_training_metadata(metadata: dict, version: str = None):
-    version = version or os.getenv("MODEL_VERSION", "v1")
-    path = get_metadata_path(version)
+def save_training_metadata(metadata: dict):
+    path = get_metadata_path()
     with open(path, "wb") as f:
         pickle.dump(metadata, f)
 
@@ -50,9 +49,8 @@ def retrain_model(
     default_epochs: int = 45,
     hpo_trials: int = 0,
 ) -> dict:
-    # определяем версию метаданных
-    version = cfg.train.version if cfg is not None else None
-    metadata = load_training_metadata(version)
+    # --- подготовка метаданных ---
+    metadata = load_training_metadata()
 
     # вытаскиваем из metadata или из текущего бандла
     factory_key = metadata.get(
@@ -87,7 +85,6 @@ def retrain_model(
             {"TRADEDATE": dates, "CLOSE": [fetch_cbr_usd_rate(d) for d in dates]}
         )
 
-    # нормализация и rename
     def prep(df, ren):
         df["TRADEDATE"] = pd.to_datetime(
             df.get("BEGIN", df["TRADEDATE"])
@@ -172,11 +169,13 @@ def retrain_model(
         mlflow.log_metric("retraining_loss", loss.item(), step=e)
 
     # сохраняем новую версию
-    maj, min_ = version.lstrip("v").split(".")
-    new_ver = f"v{maj}.{int(min_)+1}"
+    old_ver = metadata.get(f"{ticker}_model_version", "v1.0")
+    maj, min_ = old_ver.lstrip("v").split(".")
+    new_ver = f"v{maj}.{int(min_) + 1}"
     artifact_root = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
     out_dir = os.path.join(artifact_root, new_ver)
     os.makedirs(out_dir, exist_ok=True)
+
     torch.save(model.state_dict(), os.path.join(out_dir, f"{ticker}_model.pth"))
     pickle.dump(scaler_X, open(os.path.join(out_dir, f"{ticker}_scaler_X.pkl"), "wb"))
     pickle.dump(scaler_y, open(os.path.join(out_dir, f"{ticker}_scaler_y.pkl"), "wb"))
@@ -186,9 +185,8 @@ def retrain_model(
     metadata[f"{ticker}_model_version"] = new_ver
     metadata[f"{ticker}_factory_key"] = factory_key
     metadata[f"{ticker}_model_params"] = model_params
-    save_training_metadata(metadata, new_ver)
+    save_training_metadata(metadata)
 
-    # возвращаем bundle
     return {
         "model": model,
         "scaler_X": scaler_X,

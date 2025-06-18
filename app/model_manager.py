@@ -1,3 +1,5 @@
+import glob
+import logging
 import os
 import pickle
 
@@ -7,68 +9,58 @@ from app.models.factory import get_model
 from app.transfer_learning import load_training_metadata
 
 ARTIFACTS_ROOT = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
-DEFAULT_MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
 
-# Конфигурация по тикерам с именами файлов и параметрами по умолчанию
-TICKER_CONFIGS = {
-    "SBER": {
-        "default_factory": "lstm",
-        "model_file": "SBER_model.pth",
-        "scaler_x": "SBER_scaler_X.pkl",
-        "scaler_y": "SBER_scaler_y.pkl",
-        "params": {
-            "seq_length": 20,
-            "num_features": 18,
-            "output_dim": 1,
-            "lstm_units": 240,
-            "fc_units": 127,
-            "dropout_rate": 0.1335,
-        },
-    },
-    "GAZP": {
-        "default_factory": "tcn",
-        "model_file": "GAZP_model.pth",
-        "scaler_x": "GAZP_scaler_X.pkl",
-        "scaler_y": "GAZP_scaler_y.pkl",
-        "params": {
-            "num_features": 18,
-            "num_channels": [64, 128, 256, 512],
-            "kernel_size": 5,
-            "dropout": 0.28,
-            "fc_units": 30,
-        },
-    },
-    "ROSN": {
-        "default_factory": "tft",
-        "model_file": "ROSN_model.pth",
-        "scaler_x": "ROSN_scaler_X.pkl",
-        "scaler_y": "ROSN_scaler_y.pkl",
-        "params": {
-            "seq_length": 15,
-            "num_features": 18,
-            "d_model": 32,
-            "n_heads": 4,
-            "n_layers": 2,
-            "d_ff": 384,
-            "dropout": 0.09031434953930437,
-        },
-    },
-}
+# Настраиваем логгер модуля
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    fmt = logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+    handler.setFormatter(fmt)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 
 def load_models():
+    """
+    Загружает все модели, которые есть в training_metadata.pkl.
+    Для каждого <TICKER> из метаданных ищем артефакты в saved_models/<version>/:
+      - веса: либо '<ticker>_best.pth', либо '<ticker>_model.pth'
+      - скейлеры: '<ticker>_scaler_X.pkl', '<ticker>_scaler_y.pkl'
+    Логирует по мере загрузки.
+    """
     models = {}
     metadata = load_training_metadata()
-    for ticker, cfg in TICKER_CONFIGS.items():
-        version = metadata.get(f"{ticker}_model_version", DEFAULT_MODEL_VERSION)
-        factory_key = metadata.get(f"{ticker}_factory_key", cfg["default_factory"])
-        params = metadata.get(f"{ticker}_model_params", cfg["params"])
+
+    for key, version in metadata.items():
+        if not key.endswith("_model_version"):
+            continue
+        ticker = key[: -len("_model_version")]
+        factory_key = metadata.get(f"{ticker}_factory_key")
+        params = metadata.get(f"{ticker}_model_params")
+
+        if factory_key is None or params is None:
+            logger.warning(f"Пропускаем {ticker}: неполные метаданные")
+            continue
 
         model_dir = os.path.join(ARTIFACTS_ROOT, version)
-        path_model = os.path.join(model_dir, cfg["model_file"])
-        path_sx = os.path.join(model_dir, cfg["scaler_x"])
-        path_sy = os.path.join(model_dir, cfg["scaler_y"])
-        if not all(os.path.exists(p) for p in (path_model, path_sx, path_sy)):
+        if not os.path.isdir(model_dir):
+            logger.warning(f"Директория не найдена: {model_dir}")
+            continue
+
+        # ищем файл весов
+        matches = glob.glob(os.path.join(model_dir, f"{ticker}_best.pth")) + glob.glob(
+            os.path.join(model_dir, f"{ticker}_model.pth")
+        )
+        if not matches:
+            logger.warning(f"Весов для {ticker}@{version} не найдено")
+            continue
+        path_model = matches[0]
+
+        # пути к скейлерам
+        path_sx = os.path.join(model_dir, f"{ticker}_scaler_X.pkl")
+        path_sy = os.path.join(model_dir, f"{ticker}_scaler_y.pkl")
+        if not (os.path.exists(path_sx) and os.path.exists(path_sy)):
+            logger.warning(f"Скейлеры для {ticker}@{version} не найдены")
             continue
 
         try:
@@ -77,7 +69,7 @@ def load_models():
             model.load_state_dict(state)
             model.eval()
         except Exception as e:
-            print(f"[ERROR] Failed to load model for {ticker}: {e}")
+            logger.error(f"Не удалось загрузить {ticker}@{version}: {e}")
             continue
 
         with open(path_sx, "rb") as f:
@@ -91,8 +83,14 @@ def load_models():
             "scaler_y": scaler_y,
             "seq_length": params.get("seq_length"),
             "model_version": version,
+            "factory_key": factory_key,
+            "model_params": params,
         }
+        logger.info(f"Загружена модель {ticker}@{version}")
 
     if not models:
+        logger.error("Не загружено ни одной модели")
         raise RuntimeError("No models loaded")
+
+    logger.info(f"Всего загружено моделей: {len(models)} ({', '.join(models.keys())})")
     return models
