@@ -35,5 +35,22 @@ class LSTMModel(nn.Module):
         return self.fc2(self.dropout(h))
 
 
-def build_model(**kwargs):
-    return LSTMModel(**kwargs)
+def build_model(
+    seq_length: int,
+    num_features: int,
+    output_dim: int,
+    lstm_units: int,
+    fc_units: int,
+    dropout_rate: float,
+) -> nn.Module:
+    """
+    Фабричная функция для создания LSTMModel.
+    """
+    return LSTMModel(
+        seq_length=seq_length,
+        num_features=num_features,
+        output_dim=output_dim,
+        lstm_units=lstm_units,
+        fc_units=fc_units,
+        dropout_rate=dropout_rate,
+    )
