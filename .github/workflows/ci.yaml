@@ -28,8 +28,11 @@ jobs:
     - name: Lint with flake8
       run: flake8 .
 
-    - name: Type check with mypy
-      run: mypy app
+    - name: Format check with isort
+      run: isort --check-only .
+
+    - name: Format check with black
+      run: black --check .
 
     - name: Run tests
       run: pytest --cov=app --cov-report=xml tests/
