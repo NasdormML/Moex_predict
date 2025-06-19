@@ -5,3 +5,4 @@ fastapi[test]
 codecov
 flake8
 mypy
+isort
