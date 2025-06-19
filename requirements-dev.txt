@@ -1,5 +1,7 @@
-black
-isort
+pytest
+pytest-cov
+requests-mock
+fastapi[test]
+codecov
 flake8
-pre-commit
-flake8-bugbear
+mypy
