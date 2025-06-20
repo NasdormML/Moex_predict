@@ -4,6 +4,5 @@ requests-mock
 fastapi[test]
 codecov
 flake8
-mypy
 isort
 black
