@@ -2,6 +2,7 @@ pytest
 pytest-cov
 requests-mock
 fastapi[test]
+httpx
 codecov
 flake8
 isort
