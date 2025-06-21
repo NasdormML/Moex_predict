@@ -1,4 +1,5 @@
 epochs: 60
+seq_length: 20
 lr: 0.00262
 weight_decay: 1e-5
 seed: 42

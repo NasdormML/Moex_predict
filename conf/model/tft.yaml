@@ -1,6 +1,6 @@
 name: tft
 params:
-  seq_length: 15
+  seq_length: 20
   num_features: 18
   d_model: 32
   n_heads: 4

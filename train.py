@@ -39,7 +39,7 @@ def main(cfg: DictConfig):
         shuffle=cfg.data.shuffle,
         num_workers=cfg.data.num_workers,
         return_scalers=True,
-        seq_len=cfg.model.params.seq_length,
+        seq_len=cfg.train.seq_length,
         lookback_days=cfg.data.lookback_days,
         start_date=cfg.data.start_date,
         end_date=cfg.data.end_date,
@@ -128,15 +128,10 @@ def main(cfg: DictConfig):
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_y.pkl"), "wb") as fy:
         pickle.dump(scaler_y, fy)
 
-    # --- обновляем единый файл training_metadata.pkl ---
     md = load_training_metadata()
-    # дата последнего обучения — конец датасета
     md[cfg.data.ticker] = cfg.data.end_date
-    # версия модели
     md[f"{cfg.data.ticker}_model_version"] = cfg.train.version
-    # фабрика (lstm/tcn/…)
     md[f"{cfg.data.ticker}_factory_key"] = cfg.model.name
-    # параметры модели (преобразуем в обычный dict)
     md[f"{cfg.data.ticker}_model_params"] = OmegaConf.to_container(
         cfg.model.params, resolve=True
     )

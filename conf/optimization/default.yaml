@@ -37,6 +37,7 @@ search_space:
     - 0.1
     - 0.2
     - 0.3
+
   # LSTM
   lstm_units:
     - 64
@@ -52,6 +53,7 @@ search_space:
     - 0.1
     - 0.2
     - 0.3
+
   # TCN
   num_channels:
     - [64, 128]
@@ -61,3 +63,35 @@ search_space:
     - 3
     - 5
     - 7
+
+  # Autoformer
+  autoformer_d_model:
+    - 32
+    - 64
+    - 96
+    - 128
+  autoformer_n_heads:
+    - 1
+    - 2
+    - 4
+    - 8
+  autoformer_num_layers:
+    - 1
+    - 2
+    - 3
+    - 4
+  autoformer_d_ff:
+    - 128
+    - 256
+    - 384
+    - 512
+  autoformer_dropout:
+    - 0.0
+    - 0.1
+    - 0.2
+    - 0.3
+  autoformer_kernel_size:
+    - 5
+    - 15
+    - 25
+    - 51
