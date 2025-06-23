@@ -25,10 +25,27 @@ def set_seed(seed: int):
     torch.backends.cudnn.deterministic = True
 
 
+def _ensure_str_keys(obj):
+    if isinstance(obj, dict):
+        return {
+            (
+                k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else str(k)
+            ): _ensure_str_keys(v)
+            for k, v in obj.items()
+        }
+    elif isinstance(obj, list):
+        return [_ensure_str_keys(v) for v in obj]
+    elif isinstance(obj, (bytes, bytearray)):
+        return obj.decode("utf-8")
+    else:
+        return obj
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     set_seed(cfg.train.seed)
     print(OmegaConf.to_yaml(cfg))
+
     device = torch.device(
         cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
     )
@@ -45,24 +62,24 @@ def main(cfg: DictConfig):
         end_date=cfg.data.end_date,
     )
 
-    # подбор гиперпараметров
     if cfg.optimization.enable:
-        best_params, study = optimize_model(train_dl, val_dl, cfg, device)
-        print("Best hyperparameters:\n", best_params)
+        best_params, _ = optimize_model(train_dl, val_dl, cfg, device)
         for k, v in best_params.items():
             if k in cfg.model.params:
                 cfg.model.params[k] = v
             elif k == "learning_rate":
                 cfg.train.lr = v
 
-    # финальное обучение
     model = get_model(cfg.model.name, **cfg.model.params).to(device)
-    wd = (
-        cfg.optimization.weight_decay
-        if cfg.optimization.enable
-        else cfg.train.weight_decay
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=cfg.train.lr,
+        weight_decay=(
+            cfg.optimization.weight_decay
+            if cfg.optimization.enable
+            else cfg.train.weight_decay
+        ),
     )
-    optimizer = optim.AdamW(model.parameters(), lr=cfg.train.lr, weight_decay=wd)
     criterion = nn.HuberLoss()
 
     out_dir = os.path.join(cfg.train.model_artifacts_dir, cfg.train.version)
@@ -70,7 +87,6 @@ def main(cfg: DictConfig):
 
     best_val = float("inf")
     for epoch in range(1, cfg.train.epochs + 1):
-        # train loop
         model.train()
         train_loss = 0.0
         for X, y in train_dl:
@@ -84,7 +100,6 @@ def main(cfg: DictConfig):
             train_loss += loss.item()
         train_loss /= len(train_dl)
 
-        # validation loop
         model.eval()
         val_loss = 0.0
         all_preds, all_targets = [], []
@@ -97,50 +112,49 @@ def main(cfg: DictConfig):
                 all_targets.append(yv.cpu().numpy())
         val_loss /= len(val_dl)
 
-        # денормализация и метрики
-        preds_np = np.concatenate(all_preds).reshape(-1, 1)
-        tgt_np = np.concatenate(all_targets).reshape(-1, 1)
-        inv_p = scaler_y.inverse_transform(preds_np)
-        inv_t = scaler_y.inverse_transform(tgt_np)
-        mse = mean_squared_error(inv_t, inv_p)
-        rmse = np.sqrt(mse)
+        inv_p = scaler_y.inverse_transform(np.concatenate(all_preds).reshape(-1, 1))
+        inv_t = scaler_y.inverse_transform(np.concatenate(all_targets).reshape(-1, 1))
+        mse_val = mean_squared_error(inv_t, inv_p)
+        rmse = np.sqrt(mse_val)
         mae = mean_absolute_error(inv_t, inv_p)
 
         print(
             f"Epoch {epoch}/{cfg.train.epochs} | "
-            f"train_loss={train_loss:.4f} | "
-            f"val_loss_scaled={val_loss:.4f} | "
+            f"train_loss={train_loss:.4f} | val_loss_scaled={val_loss:.4f} | "
             f"RMSE={rmse:.4f} | MAE={mae:.4f}"
         )
-
         if val_loss < best_val:
             best_val = val_loss
             torch.save(
                 model.state_dict(),
-                os.path.join(out_dir, f"{cfg.data.ticker}_best.pth"),
+                os.path.join(out_dir, f"{cfg.data.ticker}_model.pth"),
             )
 
-    print(f"Best validation loss (scaled): {best_val:.4f}")
-
-    # сохраняем скейлеры
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_X.pkl"), "wb") as fx:
         pickle.dump(scaler_X, fx)
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_y.pkl"), "wb") as fy:
         pickle.dump(scaler_y, fy)
 
-    # --- обновляем единый файл training_metadata.pkl ---
+    # Обновляем метаданные и приводим ключи к str
     md = load_training_metadata()
-    # дата последнего обучения — конец датасета
-    md[cfg.data.ticker] = cfg.data.end_date
-    # версия модели
-    md[f"{cfg.data.ticker}_model_version"] = cfg.train.version
-    # фабрика (lstm/tcn/…)
-    md[f"{cfg.data.ticker}_factory_key"] = cfg.model.name
-    # параметры модели (преобразуем в обычный dict)
-    md[f"{cfg.data.ticker}_model_params"] = OmegaConf.to_container(
-        cfg.model.params, resolve=True
-    )
-    save_training_metadata(md)
+    ticker_md = md.setdefault(cfg.data.ticker, {"active_version": None, "versions": {}})
+    version = cfg.train.version
+    ticker_md["versions"][version] = {
+        "train_date": cfg.data.end_date,
+        "data_upto": cfg.data.end_date,
+        "factory_key": cfg.model.name,
+        "model_params": OmegaConf.to_container(cfg.model.params, resolve=True),
+    }
+    ticker_md["active_version"] = version
+
+    # чистим и сохраняем
+    md_clean = _ensure_str_keys(md)
+    save_training_metadata(md_clean)
+    try:
+        save_training_metadata(md_clean)
+        print("Метаданные успешно сохранены.")
+    except Exception as e:
+        print("Ошибка при сохранении метаданных:", e)
 
 
 if __name__ == "__main__":

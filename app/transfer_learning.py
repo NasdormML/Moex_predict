@@ -1,7 +1,8 @@
+# app/transfer_learning.py
+import logging
 import os
 import pickle
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime
 
 import mlflow
 import numpy as np
@@ -9,80 +10,73 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from omegaconf import DictConfig
 
 from app.data import fetch_cbr_usd_rate, fetch_moex_eod_data
 from app.preprocessing import preprocess_data
 
+# Logger
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    h = logging.StreamHandler()
+    h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
+    logger.addHandler(h)
+logger.setLevel(logging.INFO)
 
-def get_metadata_path():
-    # единый файл, куда мы всегда пишем/читаем последние метаданные
-    metadata_dir = os.path.join("history", "metadata")
-    os.makedirs(metadata_dir, exist_ok=True)
-    return os.path.join(metadata_dir, "training_metadata.pkl")
+METADATA_PATH = os.path.join("history", "metadata", "training_metadata.pkl")
+ARTIFACTS_ROOT = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
+DEFAULT_LR = 1e-7
+DEFAULT_EPOCHS = 45
 
 
-def load_training_metadata() -> dict:
-    # всегда читаем единый файл
-    path = get_metadata_path()
-    if os.path.exists(path):
-        with open(path, "rb") as f:
+def load_training_metadata():
+    try:
+        with open(METADATA_PATH, "rb") as f:
             return pickle.load(f)
-    return {}
+    except FileNotFoundError:
+        return {}
 
 
-def save_training_metadata(metadata: dict):
-    path = get_metadata_path()
-    with open(path, "wb") as f:
-        pickle.dump(metadata, f)
+def save_training_metadata(md: dict):
+    os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
+    with open(METADATA_PATH, "wb") as f:
+        pickle.dump(md, f)
 
 
-# Внутри retrain_model считываем factory_key и params из metadata
-def retrain_model(
-    ticker: str,
-    last_train_datetime: datetime,
-    new_end_datetime: datetime,
-    current_model_bundle: dict,
-    cfg: Optional[DictConfig] = None,
-    window_days: int = 180,
-    default_lr: float = 1e-7,
-    default_epochs: int = 45,
-    hpo_trials: int = 0,
-) -> dict:
-    # --- подготовка метаданных ---
-    metadata = load_training_metadata()
+def retrain_model(ticker: str, bundle: dict, retrain_threshold: int = 5):
+    md_all = load_training_metadata()
+    md = md_all.get(ticker, {})
+    ver = md.get("active_version")
+    ver_md = md.get("versions", {}).get(ver, {})
+    train_date = ver_md.get("train_date")
+    data_upto = ver_md.get("data_upto")
 
-    # вытаскиваем из metadata или из текущего бандла
-    factory_key = metadata.get(
-        f"{ticker}_factory_key", current_model_bundle.get("factory_key")
+    if not train_date or not data_upto:
+        logger.info(f"[{ticker}] missing metadata, skip retrain")
+        return bundle
+
+    td = datetime.strptime(train_date, "%Y-%m-%d").date()
+    bizdays = len(pd.bdate_range(td, datetime.today().date())) - 1
+    if bizdays < retrain_threshold:
+        logger.info(f"[{ticker}] fresh ({bizdays} days), skip retrain")
+        return bundle
+
+    logger.info(f"[{ticker}] retraining, last train {bizdays} bd ago")
+    # load window data
+    window_days = bundle["model_params"].get("window_days", 180)
+    start = (datetime.today().date() - pd.tseries.offsets.BDay(window_days)).strftime(
+        "%Y-%m-%d"
     )
-    model_params = metadata.get(
-        f"{ticker}_model_params", current_model_bundle.get("model_params")
-    )
+    end = datetime.today().date().strftime("%Y-%m-%d")
 
-    # проверяем, нужно ли дообучение
-    last_str = metadata.get(ticker)
-    if last_str:
-        last_date = datetime.strptime(last_str, "%Y-%m-%d").date()
-        if new_end_datetime.date() <= last_date:
-            return current_model_bundle
-
-    # --- подготовка данных ---
-    seq_length = model_params.get("seq_length", 20)
-    available_days = (new_end_datetime.date() - last_train_datetime.date()).days
-    window_days = min(window_days, max(available_days, seq_length + 1))
-    start_date = (new_end_datetime - timedelta(days=window_days)).strftime("%Y-%m-%d")
-    end_date = new_end_datetime.strftime("%Y-%m-%d")
-
-    df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", start_date, end_date)
-    df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", start_date, end_date)
-    df_u = fetch_moex_eod_data(
-        "USD000UTSTOM", "currency", "selt", "CETS", start_date, end_date
-    )
+    df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", start, end)
+    df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", start, end)
+    df_u = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", start, end)
     if df_u is None or df_u.empty:
-        dates = pd.date_range(start_date, end_date)
         df_u = pd.DataFrame(
-            {"TRADEDATE": dates, "CLOSE": [fetch_cbr_usd_rate(d) for d in dates]}
+            {
+                "TRADEDATE": pd.date_range(start, end),
+                "CLOSE": [fetch_cbr_usd_rate(d) for d in pd.date_range(start, end)],
+            }
         )
 
     def prep(df, ren):
@@ -103,15 +97,14 @@ def retrain_model(
     )
     df_i = prep(df_i, {"CLOSE": "CLOSE_IMOEX"})
     df_u = prep(df_u, {"CLOSE": "CLOSE_USD"})
-
     merged = (
         df_t[
             [
                 "TRADEDATE",
+                f"CLOSE_{ticker}",
                 f"OPEN_{ticker}",
                 f"HIGH_{ticker}",
                 f"LOW_{ticker}",
-                f"CLOSE_{ticker}",
                 f"VOL_{ticker}",
             ]
         ]
@@ -123,76 +116,78 @@ def retrain_model(
         .dropna()
         .reset_index(drop=True)
     )
-    df_proc = preprocess_data(merged, ticker)
+    proc = preprocess_data(merged, ticker)
 
-    # формируем X, y
-    features = [
-        col
-        for col in df_proc.columns
-        if col.startswith((f"OPEN_{ticker}", f"CLOSE_{ticker}"))
+    features = bundle["model_params"].get(
+        "feature_list", [c for c in proc.columns if c != "TRADEDATE"]
+    )
+    data = proc[features].values.astype(float)
+    seq = bundle["seq_length"]
+    if data.shape[0] <= seq:
+        logger.info(f"[{ticker}] insufficient data, skip retrain")
+        return bundle
+
+    X_arr = np.lib.stride_tricks.sliding_window_view(data, (seq, data.shape[1]))[
+        :, 0, :, :
     ]
-    data = df_proc[features].values.astype(float)
-    X_list, y_list = [], []
-    close_idx = features.index(f"CLOSE_{ticker}")
-    for i in range(len(data) - seq_length):
-        X_list.append(data[i : i + seq_length])
-        y_list.append(data[i + seq_length][close_idx])
-    X_arr = np.array(X_list)
-    y_arr = np.array(y_list).reshape(-1, 1)
+    y_arr = data[seq:, features.index(f"CLOSE_{ticker}")].reshape(-1, 1)
 
-    # масштабирование
-    scaler_X = current_model_bundle["scaler_X"]
-    scaler_y = current_model_bundle["scaler_y"]
-    X_scaled = scaler_X.transform(X_arr.reshape(-1, X_arr.shape[2])).reshape(
-        X_arr.shape
-    )
-    y_scaled = scaler_y.transform(y_arr)
+    scaler_X = bundle["scaler_X"]
+    scaler_y = bundle["scaler_y"]
+    Xs = scaler_X.transform(X_arr.reshape(-1, X_arr.shape[2])).reshape(X_arr.shape)
+    ys = scaler_y.transform(y_arr)
 
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-    y_tensor = torch.tensor(y_scaled, dtype=torch.float32)
+    # fine-tune params
+    model = bundle["model"]
+    ft = bundle["model_params"].get("fine_tune_modules", [])
+    params = [
+        p for n, p in model.named_parameters() if not ft or any(m in n for m in ft)
+    ]
+    for p in model.parameters():
+        p.requires_grad = p in params
+    if not params:
+        params = list(model.parameters())
+        [p.requires_grad_() for p in params]
 
-    # обучение только fc-слоёв
-    model = current_model_bundle["model"]
-    for name, param in model.named_parameters():
-        param.requires_grad = "fc" in name
-    optimizer = optim.AdamW(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=default_lr
-    )
+    opt = optim.AdamW(params, lr=DEFAULT_LR)
     loss_fn = nn.HuberLoss()
+    X_t = torch.tensor(Xs, dtype=torch.float32)
+    y_t = torch.tensor(ys, dtype=torch.float32)
     model.train()
-    for e in range(default_epochs):
-        optimizer.zero_grad()
-        preds = model(X_tensor)
-        loss = loss_fn(preds, y_tensor)
+    for epoch in range(DEFAULT_EPOCHS):
+        opt.zero_grad()
+        loss = loss_fn(model(X_t), y_t)
         loss.backward()
-        optimizer.step()
-        mlflow.log_metric("retraining_loss", loss.item(), step=e)
+        opt.step()
+        mlflow.log_metric("retraining_loss", loss.item(), step=epoch)
 
-    # сохраняем новую версию
-    old_ver = metadata.get(f"{ticker}_model_version", "v1.0")
-    maj, min_ = old_ver.lstrip("v").split(".")
-    new_ver = f"v{maj}.{int(min_) + 1}"
-    artifact_root = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
-    out_dir = os.path.join(artifact_root, new_ver)
-    os.makedirs(out_dir, exist_ok=True)
+    # save
+    maj, min_ = ver.lstrip("v").split(".")
+    new_ver = f"v{maj}.{int(min_)+1}"
+    out = os.path.join(ARTIFACTS_ROOT, new_ver)
+    os.makedirs(out, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(out, f"{ticker}_model.pth"))
+    with open(os.path.join(out, f"{ticker}_scaler_X.pkl"), "wb") as f:
+        pickle.dump(scaler_X, f)
+    with open(os.path.join(out, f"{ticker}_scaler_y.pkl"), "wb") as f:
+        pickle.dump(scaler_y, f)
 
-    torch.save(model.state_dict(), os.path.join(out_dir, f"{ticker}_model.pth"))
-    pickle.dump(scaler_X, open(os.path.join(out_dir, f"{ticker}_scaler_X.pkl"), "wb"))
-    pickle.dump(scaler_y, open(os.path.join(out_dir, f"{ticker}_scaler_y.pkl"), "wb"))
-
-    # обновляем метаданные
-    metadata[ticker] = new_end_datetime.strftime("%Y-%m-%d")
-    metadata[f"{ticker}_model_version"] = new_ver
-    metadata[f"{ticker}_factory_key"] = factory_key
-    metadata[f"{ticker}_model_params"] = model_params
-    save_training_metadata(metadata)
-
-    return {
-        "model": model,
-        "scaler_X": scaler_X,
-        "scaler_y": scaler_y,
-        "seq_length": seq_length,
-        "factory_key": factory_key,
-        "model_params": model_params,
-        "model_version": new_ver,
+    # update metadata
+    md_all[ticker]["versions"][new_ver] = {
+        "train_date": datetime.today().strftime("%Y-%m-%d"),
+        "data_upto": datetime.today().strftime("%Y-%m-%d"),
+        "factory_key": bundle["factory_key"],
+        "model_params": bundle["model_params"],
     }
+    md_all[ticker]["active_version"] = new_ver
+    save_training_metadata(md_all)
+    bundle.update(
+        {
+            "model": model,
+            "model_version": new_ver,
+            "scaler_X": scaler_X,
+            "scaler_y": scaler_y,
+        }
+    )
+    logger.info(f"[{ticker}] retrain done {new_ver}")
+    return bundle
