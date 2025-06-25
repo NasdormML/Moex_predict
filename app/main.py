@@ -13,15 +13,12 @@ from app.predict import predict_price
 from app.preprocessing import preprocess_data
 from app.transfer_learning import load_training_metadata, retrain_model
 
-# FastAPI & MLflow setup
 app = FastAPI(title="MOEX Price Prediction API")
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"))
 mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "MOEX_Price_Prediction"))
 mlflow.pytorch.autolog()
 
-# Load models
 models_dict = load_models()
-
 history_dir = os.getenv("HISTORY_DIR", "history")
 os.makedirs(history_dir, exist_ok=True)
 
@@ -32,7 +29,7 @@ def predict(ticker: str, target_date: date):
     if ticker not in models_dict:
         raise HTTPException(404, f"Модель для {ticker} не найдена")
 
-    # Обновляем (fine-tune) если модель старше 5 бизнес-дней
+    # Fine-tune при необходимости
     bundle = models_dict[ticker]
     updated = retrain_model(ticker, bundle, retrain_threshold=5)
     if updated is not bundle:
@@ -40,9 +37,9 @@ def predict(ticker: str, target_date: date):
         bundle = updated
     mlflow.set_tag("model_version", bundle["model_version"])
 
-    # Определяем, до какой даты есть реальные данные
+    # Крайняя известная дата
     md_ticket = load_training_metadata().get(ticker, {})
-    ver = md_ticket.get("active_version")
+    ver = md_ticket.get("active_version", "")
     ver_md = md_ticket.get("versions", {}).get(ver, {})
     data_upto_str = ver_md.get("data_upto")
     if data_upto_str:
@@ -50,8 +47,8 @@ def predict(ticker: str, target_date: date):
     else:
         last_known = date.today() - timedelta(days=1)
 
+    # Забираем данные за окно в 2×seq
     seq = bundle["seq_length"]
-    # делаем запас: в два раза больше, чтобы учесть пропуски
     window = seq * 2
     start = (last_known - timedelta(days=window)).isoformat()
     end = last_known.isoformat()
@@ -67,7 +64,7 @@ def predict(ticker: str, target_date: date):
             }
         )
 
-    # Normalize & merge только числовых колонок
+    # Нормализуем только числовые колонки
     def prep(df, ren, cols):
         df = df.copy()
         df["TRADEDATE"] = pd.to_datetime(
@@ -75,7 +72,6 @@ def predict(ticker: str, target_date: date):
         ).dt.normalize()
         return df.rename(columns=ren)[cols]
 
-    # из df_t берём только нужные numeric
     t_cols = [
         "TRADEDATE",
         f"OPEN_{ticker}",
@@ -108,31 +104,39 @@ def predict(ticker: str, target_date: date):
         .dropna()
     )
 
-    # Preprocess + build feature matrix
+    # Preprocess
     proc = preprocess_data(merged, ticker)
     feat = [c for c in proc.columns if c != "TRADEDATE"]
     X_all = proc[feat].values.astype(float)
-
     if len(X_all) < seq:
         raise HTTPException(422, f"Недостаточно данных: {len(X_all)} < {seq}")
 
-    # Predict
-    pred = predict_price(
+    # Мульти-шаговый прогноз
+    preds = predict_price(
         bundle["model"], bundle["scaler_X"], bundle["scaler_y"], X_all, seq
     )
-    mlflow.log_metric("predicted_price", pred)
+    # логируем каждый шаг
+    for i, v in enumerate(preds, start=1):
+        mlflow.log_metric(f"pred_step_{i}", v)
 
-    # Save history
-    rec = pd.DataFrame(
-        {"TRADEDATE": [target_date.isoformat()], "predicted_price": [pred]}
-    )
+    # Генерируем следующие рабочие дни (Пн–Пт)
+    future_dates = []
+    d = last_known + timedelta(days=1)
+    while len(future_dates) < len(preds):
+        if d.weekday() < 5:
+            future_dates.append(d)
+        d += timedelta(days=1)
+
+    # Сохраняем в историю
+    rec = pd.DataFrame({"DATE": future_dates, "predicted_price": preds})
     pf = os.path.join(history_dir, f"predictions_{ticker}.csv")
     rec.to_csv(pf, mode="a", header=not os.path.exists(pf), index=False)
 
     return {
         "ticker": ticker,
-        "target_date": target_date.isoformat(),
-        "prediction": pred,
+        "known_up_to": last_known.isoformat(),
+        "forecast_dates": [d.isoformat() for d in future_dates],
+        "predictions": preds,
     }
 
 
