@@ -1,4 +1,3 @@
-# app/transfer_learning.py
 import logging
 import os
 import pickle

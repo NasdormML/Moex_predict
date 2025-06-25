@@ -12,7 +12,7 @@ def predict_price(model, scaler_X, scaler_y, data, seq_length=20):
     sequence = data[-seq_length:]
     num_features = sequence.shape[1]
 
-    # Масштабирование последовательности
+    # Масштабирование
     sequence_scaled = scaler_X.transform(sequence).reshape(1, seq_length, num_features)
     sequence_tensor = torch.tensor(sequence_scaled, dtype=torch.float32)
 
@@ -21,11 +21,11 @@ def predict_price(model, scaler_X, scaler_y, data, seq_length=20):
         pred_tensor = model(sequence_tensor)
 
     pred_scaled = pred_tensor.cpu().numpy()
+    pred = scaler_y.inverse_transform(pred_scaled)  # [1, horizon]
 
-    pred = scaler_y.inverse_transform(pred_scaled)
     print("pred (inverse transformed):", pred)
 
     if not np.isfinite(pred).all():
         raise ValueError("Model returned non-finite prediction.")
 
-    return float(pred[0][0])
+    return pred[0].tolist()

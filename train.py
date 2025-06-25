@@ -10,7 +10,7 @@ import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from app.data import get_dataloaders
+from app.data import get_dataloaders_multi
 from app.models.factory import get_model
 from app.optimization import optimize_model
 from app.transfer_learning import load_training_metadata, save_training_metadata
@@ -43,6 +43,12 @@ def _ensure_str_keys(obj):
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig):
+    # default end_date today
+    from datetime import date
+
+    if cfg.data.end_date is None:
+        cfg.data.end_date = date.today().isoformat()
+
     set_seed(cfg.train.seed)
     print(OmegaConf.to_yaml(cfg))
 
@@ -50,18 +56,19 @@ def main(cfg: DictConfig):
         cfg.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
     )
 
-    train_dl, val_dl, scaler_X, scaler_y = get_dataloaders(
+    # Multi-step data loaders
+    train_dl, val_dl, scaler_X, scaler_y = get_dataloaders_multi(
         ticker=cfg.data.ticker,
+        seq_length=cfg.model.params.seq_length,
+        horizon=cfg.train.horizon,
         batch_size=cfg.data.batch_size,
-        shuffle=cfg.data.shuffle,
-        num_workers=cfg.data.num_workers,
-        return_scalers=True,
-        seq_len=cfg.model.params.seq_length,
         lookback_days=cfg.data.lookback_days,
         start_date=cfg.data.start_date,
         end_date=cfg.data.end_date,
+        return_scalers=True,
     )
 
+    # Hyperparameter optimization
     if cfg.optimization.enable:
         best_params, _ = optimize_model(train_dl, val_dl, cfg, device)
         for k, v in best_params.items():
@@ -70,7 +77,20 @@ def main(cfg: DictConfig):
             elif k == "learning_rate":
                 cfg.train.lr = v
 
-    model = get_model(cfg.model.name, **cfg.model.params).to(device)
+    # Instantiate model with horizon
+    try:
+        X0, _ = next(iter(train_dl))
+        num_feat = X0.shape[-1]
+    except Exception:
+        raise RuntimeError("Не удалось определить num_features из train_dl")
+
+    model = get_model(
+        cfg.model.name,
+        num_features=num_feat,
+        horizon=cfg.train.horizon,
+        **cfg.model.params,
+    ).to(device)
+
     optimizer = optim.AdamW(
         model.parameters(),
         lr=cfg.train.lr,
@@ -89,11 +109,11 @@ def main(cfg: DictConfig):
     for epoch in range(1, cfg.train.epochs + 1):
         model.train()
         train_loss = 0.0
-        for X, y in train_dl:
-            X, y = X.to(device), y.to(device).squeeze(-1)
+        for X, Y in train_dl:
+            X, Y = X.to(device), Y.to(device)
             optimizer.zero_grad()
-            preds = model(X).squeeze(-1)
-            loss = criterion(preds, y)
+            preds = model(X)  # [B, horizon]
+            loss = criterion(preds, Y)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -104,18 +124,20 @@ def main(cfg: DictConfig):
         val_loss = 0.0
         all_preds, all_targets = [], []
         with torch.no_grad():
-            for Xv, yv in val_dl:
-                Xv, yv = Xv.to(device), yv.to(device).squeeze(-1)
-                preds = model(Xv).squeeze(-1)
-                val_loss += criterion(preds, yv).item()
+            for Xv, Yv in val_dl:
+                Xv, Yv = Xv.to(device), Yv.to(device)
+                preds = model(Xv)
+                val_loss += criterion(preds, Yv).item()
                 all_preds.append(preds.cpu().numpy())
-                all_targets.append(yv.cpu().numpy())
+                all_targets.append(Yv.cpu().numpy())
         val_loss /= len(val_dl)
 
-        inv_p = scaler_y.inverse_transform(np.concatenate(all_preds).reshape(-1, 1))
-        inv_t = scaler_y.inverse_transform(np.concatenate(all_targets).reshape(-1, 1))
-        mse_val = mean_squared_error(inv_t, inv_p)
-        rmse = np.sqrt(mse_val)
+        # inverse scaling and metrics
+        preds_np = np.concatenate(all_preds)  # (N, horizon)
+        tgt_np = np.concatenate(all_targets)
+        inv_p = scaler_y.inverse_transform(preds_np)
+        inv_t = scaler_y.inverse_transform(tgt_np)
+        rmse = np.sqrt(mean_squared_error(inv_t, inv_p))
         mae = mean_absolute_error(inv_t, inv_p)
 
         print(
@@ -123,6 +145,7 @@ def main(cfg: DictConfig):
             f"train_loss={train_loss:.4f} | val_loss_scaled={val_loss:.4f} | "
             f"RMSE={rmse:.4f} | MAE={mae:.4f}"
         )
+
         if val_loss < best_val:
             best_val = val_loss
             torch.save(
@@ -130,31 +153,33 @@ def main(cfg: DictConfig):
                 os.path.join(out_dir, f"{cfg.data.ticker}_model.pth"),
             )
 
+    # Save scalers
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_X.pkl"), "wb") as fx:
         pickle.dump(scaler_X, fx)
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_y.pkl"), "wb") as fy:
         pickle.dump(scaler_y, fy)
 
-    # Обновляем метаданные и приводим ключи к str
+    # Update metadata
     md = load_training_metadata()
     ticker_md = md.setdefault(cfg.data.ticker, {"active_version": None, "versions": {}})
     version = cfg.train.version
+
+    model_params = OmegaConf.to_container(cfg.model.params, resolve=True)
+    model_params["output_dim"] = cfg.train.horizon
+    model_params["horizon"] = cfg.train.horizon
+    model_params["num_features"] = num_feat
+
     ticker_md["versions"][version] = {
         "train_date": cfg.data.end_date,
         "data_upto": cfg.data.end_date,
         "factory_key": cfg.model.name,
-        "model_params": OmegaConf.to_container(cfg.model.params, resolve=True),
+        "model_params": model_params,
     }
     ticker_md["active_version"] = version
 
-    # чистим и сохраняем
     md_clean = _ensure_str_keys(md)
     save_training_metadata(md_clean)
-    try:
-        save_training_metadata(md_clean)
-        print("Метаданные успешно сохранены.")
-    except Exception as e:
-        print("Ошибка при сохранении метаданных:", e)
+    print(f"Метаданные для {cfg.data.ticker}@{version} сохранены.")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
-# app/main.py
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import mlflow
 import mlflow.pytorch
@@ -14,13 +13,13 @@ from app.predict import predict_price
 from app.preprocessing import preprocess_data
 from app.transfer_learning import load_training_metadata, retrain_model
 
-# --- FastAPI & MLflow setup ---
+# FastAPI & MLflow setup
 app = FastAPI(title="MOEX Price Prediction API")
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"))
 mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "MOEX_Price_Prediction"))
 mlflow.pytorch.autolog()
 
-# --- Load models once ---
+# Load models
 models_dict = load_models()
 
 history_dir = os.getenv("HISTORY_DIR", "history")
@@ -33,43 +32,58 @@ def predict(ticker: str, target_date: date):
     if ticker not in models_dict:
         raise HTTPException(404, f"Модель для {ticker} не найдена")
 
-    # 1) Possibly retrain if older than 5 bd
+    # Обновляем (fine-tune) если модель старше 5 бизнес-дней
     bundle = models_dict[ticker]
-    models_dict[ticker] = retrain_model(ticker, bundle, retrain_threshold=5)
-    mlflow.set_tag("model_version", models_dict[ticker]["model_version"])
+    updated = retrain_model(ticker, bundle, retrain_threshold=5)
+    if updated is not bundle:
+        models_dict[ticker] = updated
+        bundle = updated
+    mlflow.set_tag("model_version", bundle["model_version"])
 
-    # 2) Fetch data up to today or target_date if earlier
+    # Определяем, до какой даты есть реальные данные
     md_ticket = load_training_metadata().get(ticker, {})
     ver = md_ticket.get("active_version")
     ver_md = md_ticket.get("versions", {}).get(ver, {})
-    data_upto = ver_md.get("data_upto")
-    if data_upto:
-        fetch_end = data_upto
+    data_upto_str = ver_md.get("data_upto")
+    if data_upto_str:
+        last_known = datetime.strptime(data_upto_str, "%Y-%m-%d").date()
     else:
-        fetch_end = (date.today() - timedelta(days=1)).isoformat()
+        last_known = date.today() - timedelta(days=1)
 
-    df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", None, fetch_end)
-    df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", None, fetch_end)
-    df_u = fetch_moex_eod_data(
-        "USD000UTSTOM", "currency", "selt", "CETS", None, fetch_end
-    )
+    seq = bundle["seq_length"]
+    # делаем запас: в два раза больше, чтобы учесть пропуски
+    window = seq * 2
+    start = (last_known - timedelta(days=window)).isoformat()
+    end = last_known.isoformat()
+
+    df_t = fetch_moex_eod_data(ticker, "stock", "shares", "TQBR", start, end)
+    df_i = fetch_moex_eod_data("IMOEX", "stock", "index", "SNDX", start, end)
+    df_u = fetch_moex_eod_data("USD000UTSTOM", "currency", "selt", "CETS", start, end)
     if df_u is None or df_u.empty:
         df_u = pd.DataFrame(
             {
-                "TRADEDATE": pd.date_range(fetch_end, fetch_end),
-                "CLOSE": [
-                    fetch_cbr_usd_rate(d) for d in pd.date_range(fetch_end, fetch_end)
-                ],
+                "TRADEDATE": pd.date_range(end, end),
+                "CLOSE": [fetch_cbr_usd_rate(d) for d in pd.date_range(end, end)],
             }
         )
 
-    # 3) Normalize & merge, selecting only numeric cols
-    def prep(df, ren):
+    # Normalize & merge только числовых колонок
+    def prep(df, ren, cols):
+        df = df.copy()
         df["TRADEDATE"] = pd.to_datetime(
             df.get("BEGIN", df["TRADEDATE"])
         ).dt.normalize()
-        return df.rename(columns=ren)
+        return df.rename(columns=ren)[cols]
 
+    # из df_t берём только нужные numeric
+    t_cols = [
+        "TRADEDATE",
+        f"OPEN_{ticker}",
+        f"HIGH_{ticker}",
+        f"LOW_{ticker}",
+        f"CLOSE_{ticker}",
+        f"VOL_{ticker}",
+    ]
     df_t = prep(
         df_t,
         {
@@ -79,18 +93,11 @@ def predict(ticker: str, target_date: date):
             "CLOSE": f"CLOSE_{ticker}",
             "VOLUME": f"VOL_{ticker}",
         },
-    )[
-        [
-            "TRADEDATE",
-            f"OPEN_{ticker}",
-            f"HIGH_{ticker}",
-            f"LOW_{ticker}",
-            f"CLOSE_{ticker}",
-            f"VOL_{ticker}",
-        ]
-    ]
-    df_i = prep(df_i, {"CLOSE": "CLOSE_IMOEX"})[["TRADEDATE", "CLOSE_IMOEX"]]
-    df_u = prep(df_u, {"CLOSE": "CLOSE_USD"})[["TRADEDATE", "CLOSE_USD"]]
+        t_cols,
+    )
+
+    df_i = prep(df_i, {"CLOSE": "CLOSE_IMOEX"}, ["TRADEDATE", "CLOSE_IMOEX"])
+    df_u = prep(df_u, {"CLOSE": "CLOSE_USD"}, ["TRADEDATE", "CLOSE_USD"])
 
     merged = (
         df_t.merge(df_i, on="TRADEDATE", how="outer")
@@ -101,25 +108,21 @@ def predict(ticker: str, target_date: date):
         .dropna()
     )
 
-    # 4) Preprocess, build X window
+    # Preprocess + build feature matrix
     proc = preprocess_data(merged, ticker)
     feat = [c for c in proc.columns if c != "TRADEDATE"]
     X_all = proc[feat].values.astype(float)
-    seq = models_dict[ticker]["seq_length"]
+
     if len(X_all) < seq:
         raise HTTPException(422, f"Недостаточно данных: {len(X_all)} < {seq}")
 
-    # 5) Predict
+    # Predict
     pred = predict_price(
-        models_dict[ticker]["model"],
-        models_dict[ticker]["scaler_X"],
-        models_dict[ticker]["scaler_y"],
-        X_all,  # predict_price will slice last seq rows internally
-        seq,
+        bundle["model"], bundle["scaler_X"], bundle["scaler_y"], X_all, seq
     )
     mlflow.log_metric("predicted_price", pred)
 
-    # 6) Save history
+    # Save history
     rec = pd.DataFrame(
         {"TRADEDATE": [target_date.isoformat()], "predicted_price": [pred]}
     )

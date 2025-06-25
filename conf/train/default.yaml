@@ -1,6 +1,15 @@
+# сколько дней сразу предсказывать
+horizon: 5
+
 epochs: 60
 lr: 0.00262
 weight_decay: 1e-5
 seed: 42
+
 model_artifacts_dir: saved_models
 version: v1
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null

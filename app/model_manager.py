@@ -22,29 +22,6 @@ logger.setLevel(logging.INFO)
 
 
 def load_models():
-    """
-    Загружает все активные модели, описанные в вложенных метаданных:
-    {
-      "<TICKER>": {
-        "active_version": "vX.Y",
-        "versions": {
-          "vX.Y": {
-            "factory_key": "...",
-            "model_params": { ... }
-          },
-          ...
-        }
-      },
-      ...
-    }
-    Артефакты лежат в saved_models/<version>/
-    Ищутся файлы:
-      - <ticker>_model.pth
-      - <ticker>_best.pth
-    и скейлеры:
-      - <ticker>_scaler_X.pkl
-      - <ticker>_scaler_y.pkl
-    """
     metadata = load_training_metadata()
     models = {}
 
@@ -86,6 +63,7 @@ def load_models():
             logger.warning(f"Scaler files not found for {ticker}@{version}")
             continue
 
+        print(f"[DEBUG] Loading model params for {ticker}@{version}: {params}")
         # Загрузка модели
         try:
             model = get_model(factory_key, **params)
