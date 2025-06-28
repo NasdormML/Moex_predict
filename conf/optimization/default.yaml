@@ -18,15 +18,22 @@ search_space:
     - 64
     - 96
     - 128
+    - 256
+    - 512
   n_heads:
     - 1
     - 2
     - 4
+    - 5
+    - 6
+    - 7
     - 8
   n_layers:
     - 1
     - 2
     - 3
+    - 4
+    - 5
   d_ff:
     - 128
     - 256
@@ -40,14 +47,18 @@ search_space:
 
   # LSTM
   lstm_units:
+    - 32
     - 64
     - 128
     - 240
     - 320
+    - 512
   fc_units:
+    - 32
     - 64
     - 127
     - 256
+    - 512
   dropout_rate:
     - 0.0
     - 0.1
@@ -63,6 +74,7 @@ search_space:
     - 3
     - 5
     - 7
+    - 9
 
   # Autoformer
   autoformer_d_model:
@@ -70,6 +82,7 @@ search_space:
     - 64
     - 96
     - 128
+    - 256
   autoformer_n_heads:
     - 1
     - 2

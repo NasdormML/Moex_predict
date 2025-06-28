@@ -1,9 +1,8 @@
 name: tft
 params:
-  seq_length: 20
-  num_features: 18
+  seq_length: 15
   d_model: 32
   n_heads: 4
   n_layers: 2
   d_ff: 384
-  dropout: 0.09031434953930437
+  dropout: 0.0903

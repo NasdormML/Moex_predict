@@ -10,87 +10,100 @@ from app.transfer_learning import load_training_metadata
 
 ARTIFACTS_ROOT = os.getenv("MODEL_ARTIFACTS_DIR", "saved_models")
 
-# Настраиваем логгер модуля
+# Настройка логгера
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
-    fmt = logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
-    handler.setFormatter(fmt)
+    handler.setFormatter(
+        logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+    )
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 
 def load_models():
-    """
-    Загружает все модели, которые есть в training_metadata.pkl.
-    Для каждого <TICKER> из метаданных ищем артефакты в saved_models/<version>/:
-      - веса: либо '<ticker>_best.pth', либо '<ticker>_model.pth'
-      - скейлеры: '<ticker>_scaler_X.pkl', '<ticker>_scaler_y.pkl'
-    Логирует по мере загрузки.
-    """
-    models = {}
     metadata = load_training_metadata()
+    models = {}
 
-    for key, version in metadata.items():
-        if not key.endswith("_model_version"):
+    for ticker, ticker_md in metadata.items():
+        # Получаем активную версию для тикера
+        version = ticker_md.get("active_version")
+        if not version:
+            logger.warning(f"Skipping {ticker}: no active_version set")
             continue
-        ticker = key[: -len("_model_version")]
-        factory_key = metadata.get(f"{ticker}_factory_key")
-        params = metadata.get(f"{ticker}_model_params")
 
-        if factory_key is None or params is None:
-            logger.warning(f"Пропускаем {ticker}: неполные метаданные")
+        # Берём параметры
+        ver_md = ticker_md.get("versions", {}).get(version, {})
+        factory_key = ver_md.get("factory_key")
+        params = ver_md.get("model_params")
+        if not (factory_key and params):
+            logger.warning(f"Skipping {ticker}@{version}: incomplete metadata")
             continue
 
         model_dir = os.path.join(ARTIFACTS_ROOT, version)
         if not os.path.isdir(model_dir):
-            logger.warning(f"Директория не найдена: {model_dir}")
+            logger.warning(f"Model directory not found: {model_dir}")
             continue
 
-        # ищем файл весов
-        matches = glob.glob(os.path.join(model_dir, f"{ticker}_best.pth")) + glob.glob(
-            os.path.join(model_dir, f"{ticker}_model.pth")
-        )
-        if not matches:
-            logger.warning(f"Весов для {ticker}@{version} не найдено")
+        weight_file = None
+        for pattern in (f"{ticker}_model.pth", f"{ticker}_best.pth"):
+            candidates = glob.glob(os.path.join(model_dir, pattern))
+            if candidates:
+                weight_file = candidates[0]
+                break
+        if not weight_file:
+            logger.warning(f"Weights file not found for {ticker}@{version}")
             continue
-        path_model = matches[0]
 
-        # пути к скейлерам
+        # Проверяем скейлеры
         path_sx = os.path.join(model_dir, f"{ticker}_scaler_X.pkl")
         path_sy = os.path.join(model_dir, f"{ticker}_scaler_y.pkl")
-        if not (os.path.exists(path_sx) and os.path.exists(path_sy)):
-            logger.warning(f"Скейлеры для {ticker}@{version} не найдены")
+        if not os.path.exists(path_sx) or not os.path.exists(path_sy):
+            logger.warning(f"Scaler files not found for {ticker}@{version}")
             continue
 
+        print(f"[DEBUG] Loading model params for {ticker}@{version}: {params}")
+        # Загрузка модели
         try:
             model = get_model(factory_key, **params)
-            state = torch.load(path_model, map_location="cpu")
+            state = torch.load(weight_file, map_location="cpu")
             model.load_state_dict(state)
             model.eval()
         except Exception as e:
-            logger.error(f"Не удалось загрузить {ticker}@{version}: {e}")
+            logger.error(f"Failed to instantiate or load {ticker}@{version}: {e}")
             continue
 
-        with open(path_sx, "rb") as f:
-            scaler_X = pickle.load(f)
-        with open(path_sy, "rb") as f:
-            scaler_y = pickle.load(f)
+        # Загрузка скейлеров
+        try:
+            with open(path_sx, "rb") as fx:
+                scaler_X = pickle.load(fx)
+            with open(path_sy, "rb") as fy:
+                scaler_y = pickle.load(fy)
+        except Exception as e:
+            logger.error(f"Failed to load scalers for {ticker}@{version}: {e}")
+            continue
 
+        # Проверяем, есть ли обязательный параметр seq_length
+        seq_length = params.get("seq_length")
+        if seq_length is None:
+            logger.warning(f"seq_length not found in params for {ticker}@{version}")
+            continue
+
+        # Регистрируем модель
         models[ticker] = {
             "model": model,
             "scaler_X": scaler_X,
             "scaler_y": scaler_y,
-            "seq_length": params.get("seq_length"),
+            "seq_length": seq_length,
             "model_version": version,
             "factory_key": factory_key,
             "model_params": params,
         }
-        logger.info(f"Загружена модель {ticker}@{version}")
+        logger.info(f"Loaded model {ticker}@{version}")
 
     if not models:
-        logger.error("Не загружено ни одной модели")
+        logger.error("No models loaded, aborting")
         raise RuntimeError("No models loaded")
 
-    logger.info(f"Всего загружено моделей: {len(models)} ({', '.join(models.keys())})")
+    logger.info(f"Total loaded models: {len(models)} ({', '.join(models.keys())})")
     return models

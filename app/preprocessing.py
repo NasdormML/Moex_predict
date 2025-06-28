@@ -15,20 +15,12 @@ def compute_rsi(series: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def compute_sma(series: pd.Series, window: int = SMA_WINDOW) -> pd.Series:
-    return series.rolling(window=window).mean()
-
-
-def compute_log_returns(series: pd.Series, window: int = 1) -> pd.Series:
-    return np.log(series).diff(window)
-
-
-def compute_volatility(series: pd.Series, window: int = SMA_WINDOW) -> pd.Series:
-    returns = compute_log_returns(series)
-    return returns.rolling(window=window).std()
-
-
-def compute_macd(series: pd.Series, fast_period=12, slow_period=26, signal_period=9):
+def compute_macd(
+    series: pd.Series,
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
     ema_fast = series.ewm(span=fast_period, adjust=False).mean()
     ema_slow = series.ewm(span=slow_period, adjust=False).mean()
     macd_line = ema_fast - ema_slow
@@ -37,44 +29,73 @@ def compute_macd(series: pd.Series, fast_period=12, slow_period=26, signal_perio
     return macd_line, signal_line, macd_hist
 
 
-def compute_bollinger_bands(series: pd.Series, window=20, num_std=2):
+def compute_bollinger_bands(
+    series: pd.Series,
+    window: int = 20,
+    num_std: int = 2,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
     sma = series.rolling(window=window).mean()
     std = series.rolling(window=window).std()
-    upper_band = sma + (std * num_std)
-    lower_band = sma - (std * num_std)
-    return upper_band, lower_band, sma
+    upper = sma + std * num_std
+    lower = sma - std * num_std
+    return upper, lower, sma
 
 
-def compute_atr(df: pd.DataFrame, ticker: str, window: int = 14) -> pd.Series:
-    high_low = df[f"HIGH_{ticker}"] - df[f"LOW_{ticker}"]
-    high_prev_close = np.abs(df[f"HIGH_{ticker}"] - df[f"CLOSE_{ticker}"].shift(1))
-    low_prev_close = np.abs(df[f"LOW_{ticker}"] - df[f"CLOSE_{ticker}"].shift(1))
-    true_range = pd.concat([high_low, high_prev_close, low_prev_close], axis=1).max(
-        axis=1
-    )
-    atr = true_range.rolling(window=window).mean()
-    return atr
+def compute_atr(
+    df: pd.DataFrame,
+    ticker: str,
+    window: int = SMA_WINDOW,
+) -> pd.Series:
+    high = df[f"HIGH_{ticker}"]
+    low = df[f"LOW_{ticker}"]
+    close = df[f"CLOSE_{ticker}"]
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.rolling(window=window).mean()
 
 
 def preprocess_data(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     df = df.copy()
-    close_col = f"CLOSE_{ticker}"
-    df["RSI"] = compute_rsi(df[close_col])
-    df["SMA_RETURNS"] = compute_log_returns(compute_sma(df[close_col]))
-    df["VOLATILITY"] = compute_volatility(df[close_col])
-    df["LOG_RETURNS"] = compute_log_returns(df[close_col])
+    df["TRADEDATE"] = pd.to_datetime(df["TRADEDATE"])
+    close = df[f"CLOSE_{ticker}"]
+    vol = df[f"VOL_{ticker}"]
 
-    macd_line, macd_signal, macd_hist = compute_macd(df[close_col])
-    df["MACD_LINE"] = macd_line
-    df["MACD_SIGNAL"] = macd_signal
-    df["MACD_HIST"] = macd_hist
+    df["dow"] = df["TRADEDATE"].dt.dayofweek
+    df["month"] = df["TRADEDATE"].dt.month
+    df["quarter"] = df["TRADEDATE"].dt.quarter
 
-    bb_upper, bb_lower, bb_middle = compute_bollinger_bands(df[close_col])
-    df["BB_UPPER"] = bb_upper
-    df["BB_LOWER"] = bb_lower
-    df["BB_MIDDLE"] = bb_middle
+    df["log_ret_1"] = np.log(close).diff(1)
+    df["ret_1"] = close.pct_change(1)
+    df["ret_5"] = close.pct_change(5)
 
-    df["ATR"] = compute_atr(df, ticker, window=SMA_WINDOW)
+    df["vol_5"] = df["log_ret_1"].rolling(5).std()
+    df["vol_10"] = df["log_ret_1"].rolling(10).std()
 
-    df = df.ffill().bfill().dropna().reset_index(drop=True)
-    return df
+    df["RSI14"] = compute_rsi(close)
+
+    for span in (5, 10, 20, 50):
+        df[f"EMA_{span}"] = close.ewm(span=span, adjust=False).mean()
+
+    macd_line, macd_signal, macd_hist = compute_macd(close)
+    df["MACD_LINE"], df["MACD_SIGNAL"], df["MACD_HIST"] = (
+        macd_line,
+        macd_signal,
+        macd_hist,
+    )
+
+    bb_up, bb_low, bb_mid = compute_bollinger_bands(close)
+    df["BB_UPPER"], df["BB_LOWER"], df["BB_MID"] = bb_up, bb_low, bb_mid
+
+    df["ATR"] = compute_atr(df, ticker)
+    obv = (np.sign(close.diff()) * vol).fillna(0).cumsum()
+    df["OBV"] = obv
+    df["OBV_EMA"] = obv.ewm(span=20, adjust=False).mean()
+
+    lag_feats = ["log_ret_1", "ret_1", "ret_5", "RSI14", "vol_5", "EMA_10", "MACD_HIST"]
+    for feat in lag_feats:
+        for lag in (1, 2, 3, 5):
+            df[f"{feat}_lag{lag}"] = df[feat].shift(lag)
+
+    return df.ffill().bfill().dropna().reset_index(drop=True)

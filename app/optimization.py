@@ -12,36 +12,50 @@ from app.models.factory import AVAILABLE
 log = logging.getLogger(__name__)
 
 
-def build_model_and_lr(model_name: str, model_cfg: dict, opt_cfg: DictConfig, trial):
+def build_model_and_lr(
+    model_name: str,
+    model_cfg: dict,
+    opt_cfg: DictConfig,
+    trial: optuna.Trial,
+    num_features: int = None,
+    horizon: int = None,
+):
+    """
+    Создаёт модель и learning rate для Optuna.
+    Подставляет num_features и horizon в параметры build_model.
+    """
     # Learning rate
     lr = trial.suggest_float("learning_rate", *opt_cfg.lr_range, log=True)
 
     # Подготовка параметров модели
     search_space = OmegaConf.to_container(opt_cfg.search_space, resolve=True)
     params = {}
-    fixed_keys = {"seq_length", "num_features", "output_dim"}
 
     for key, base_val in model_cfg.items():
-        if key in fixed_keys:
-            params[key] = base_val
-        elif key in search_space:
-            raw_choices = search_space[key]
-            # Особая обработка для num_channels (списки списков)
-            if key == "num_channels":
-                # сериализуем списки в строки
-                choices_str = [str(lst) for lst in raw_choices]
-                # передаем строки в Optuna
+        if key in search_space:
+            # Optuna подбор для гиперпараметров
+            choices = search_space[key]
+            if isinstance(choices, list) and key == "num_channels":
+                choices_str = [str(lst) for lst in choices]
                 sel = trial.suggest_categorical(key, tuple(choices_str))
-                # десериализуем обратно в список int
                 params[key] = ast.literal_eval(sel)
             else:
-                # для остальных параметров — tuple из скаляров
-                choices = (
-                    tuple(raw_choices) if isinstance(raw_choices, list) else raw_choices
+                params[key] = trial.suggest_categorical(
+                    key, tuple(choices) if isinstance(choices, list) else choices
                 )
-                params[key] = trial.suggest_categorical(key, choices)
         else:
             params[key] = base_val
+
+    # Подставляем num_features и horizon
+    if num_features is not None:
+        params["num_features"] = num_features
+    if horizon is not None:
+        params["horizon"] = horizon
+        if "output_dim" in params:
+            params["output_dim"] = horizon
+
+    if "seq_length" in params:
+        params["seq_length"] = params.pop("seq_length")
 
     # Импорт модели и фильтрация параметров
     module_path = AVAILABLE.get(model_name)
@@ -50,7 +64,6 @@ def build_model_and_lr(model_name: str, model_cfg: dict, opt_cfg: DictConfig, tr
     module = import_module(module_path)
     build_fn = module.build_model
 
-    # Оставляем только те параметры, которые принимает build_model
     sig = inspect.signature(build_fn)
     filtered_params = {k: v for k, v in params.items() if k in sig.parameters}
 
@@ -73,9 +86,9 @@ def train_one_epoch(model: torch.nn.Module, dataloader, optimizer, criterion, de
     model.train()
     total_loss = 0.0
     for X, y in dataloader:
-        X, y = X.to(device), y.to(device).squeeze(-1)
+        X, y = X.to(device), y.to(device)
         optimizer.zero_grad()
-        preds = model(X).squeeze(-1)
+        preds = model(X)
         loss = criterion(preds, y)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -89,8 +102,8 @@ def evaluate(model: torch.nn.Module, dataloader, criterion, device):
     total_loss = 0.0
     with torch.no_grad():
         for X, y in dataloader:
-            X, y = X.to(device), y.to(device).squeeze(-1)
-            preds = model(X).squeeze(-1)
+            X, y = X.to(device), y.to(device)
+            preds = model(X)
             loss = criterion(preds, y)
             total_loss += loss.item()
     return total_loss / len(dataloader)
@@ -98,7 +111,22 @@ def evaluate(model: torch.nn.Module, dataloader, criterion, device):
 
 def objective(trial: optuna.Trial, train_dl, val_dl, cfg: DictConfig, device):
     model_cfg = OmegaConf.to_container(cfg.model.params, resolve=True)
-    model, lr = build_model_and_lr(cfg.model.name, model_cfg, cfg.optimization, trial)
+    # получаем число признаков из первого батча
+    try:
+        X0, Y0 = next(iter(train_dl))
+        num_feat = X0.shape[-1]
+    except Exception:
+        raise RuntimeError("Не удалось определить num_features из train_dl")
+    horizon = getattr(cfg.train, "horizon", None)
+
+    model, lr = build_model_and_lr(
+        cfg.model.name,
+        model_cfg,
+        cfg.optimization,
+        trial,
+        num_features=num_feat,
+        horizon=horizon,
+    )
     model.to(device)
 
     optimizer = torch.optim.AdamW(
