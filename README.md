@@ -95,7 +95,7 @@ MOEX_PREDICT/
 
 ## Technologies
 
-* **Python:** 3.10+
+* **Python:** 3.11
 * **Config:** Hydra (1.3.2), OmegaConf
 * **Data:** Pandas, NumPy, scikit-learn
 * **Deep Learning:** PyTorch 2.6
@@ -114,17 +114,19 @@ All experiments are driven by `conf/config.yaml`. Override sections via CLI:
 python3 train.py \
    model=tcn \
    data.ticker=GAZP \
+   train.horizon=5 \
    train.version=v2
 
 # Train model with HPO:
  python3 train.py \
   model=lstm \
-  data.ticker=ROSN \
+  data.ticker=SBER \
   data.start_date=2013-01-01 \
-  train.epochs=40 \
-  train.version=v2 \
+  train.horizon=5 \
+  train.epochs=20 \
+  train.version=v1 \
   optimization.enable=true \
-  optimization.n_trials=30 \
+  optimization.n_trials=20 \
   optimization.epochs_per_trial=20
 ```
 
@@ -173,15 +175,25 @@ make run
 ## API Reference
 
 **POST /predict**
-
-* **Body:** `{ ticker: str, start_date: YYYY-MM-DD, end_date: YYYY-MM-DD }`
-* **Response:**
-  ```bash
-  {
+```bash
+{
   "ticker": "SBER",
-  "predicted_price": 292.4643249511719,
-  "date": "2025-05-30"
-  }
+  "known_up_to": "2025-06-28",
+  "forecast_dates": [
+    "2025-06-30",
+    "2025-07-01",
+    "2025-07-02",
+    "2025-07-03",
+    "2025-07-04"
+  ],
+  "predictions": [
+    307.3966369628906,
+    306.07830810546875,
+    305.132080078125,
+    305.0485534667969,
+    305.2849426269531
+  ]
+}
   ```
 
 ---
