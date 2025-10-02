@@ -138,6 +138,145 @@ def fetch_usd_series(
     return df
 
 
+def get_smart_features(
+    proc: pd.DataFrame, ticker: str, target_count: int = None
+) -> list:
+    excluded_cols = {"TRADEDATE", "target_close", "date"}
+    all_features = [col for col in proc.columns if col not in excluded_cols]
+
+    print(f"Всего доступно признаков: {len(all_features)}")
+
+    if target_count is None or target_count > len(all_features):
+        target_count = len(all_features)
+
+    feature_groups = {
+        "price_basic": [
+            f"OPEN_{ticker}",
+            f"HIGH_{ticker}",
+            f"LOW_{ticker}",
+            f"CLOSE_{ticker}",
+            f"VOL_{ticker}",
+            "CLOSE_IMOEX",
+            "CLOSE_USD",
+        ],
+        "returns": [f for f in all_features if f.startswith(("log_ret_", "ret_"))],
+        "volatility": [f for f in all_features if f.startswith("volatility_")],
+        "rsi": [f for f in all_features if f.startswith("RSI_")],
+        "ema": [f for f in all_features if f.startswith("EMA_")],
+        "macd": [f for f in all_features if f.startswith("MACD_")],
+        "bollinger": [f for f in all_features if f.startswith("BB_")],
+        "atr": [f for f in all_features if f.startswith("ATR")],
+        "volume": [f for f in all_features if "volume" in f.lower()],
+        "statistical": [
+            f
+            for f in all_features
+            if any(
+                x in f for x in ["skew", "kurt", "zscore", "q25", "q75", "iqr", "mad"]
+            )
+        ],
+        "trend": [
+            f
+            for f in all_features
+            if any(x in f for x in ["trend", "ratio", "position"])
+        ],
+        "cyclical": [f for f in all_features if any(x in f for x in ["sin", "cos"])],
+        "lags": [
+            f for f in all_features if any(x in f for x in ["_lag_", "_rolling_"])
+        ],
+        "interactions": [f for f in all_features if "interaction" in f],
+    }
+
+    existing_groups = {}
+    for group_name, patterns in feature_groups.items():
+        existing_features = [f for f in patterns if f in all_features]
+        if existing_features:
+            existing_groups[group_name] = existing_features
+            print(f"Группа {group_name}: {len(existing_features)} признаков")
+
+    total_available = sum(len(features) for features in existing_groups.values())
+    group_quotas = {}
+
+    for group_name, features in existing_groups.items():
+        group_ratio = len(features) / total_available
+        group_quotas[group_name] = max(1, int(target_count * group_ratio))
+
+    total_allocated = sum(group_quotas.values())
+    if total_allocated != target_count:
+        difference = target_count - total_allocated
+        sorted_groups = sorted(
+            group_quotas.items(), key=lambda x: len(existing_groups[x[0]]), reverse=True
+        )
+
+        for i in range(abs(difference)):
+            group_name, quota = sorted_groups[i % len(sorted_groups)]
+            if difference > 0:
+                group_quotas[group_name] += 1
+            else:
+                group_quotas[group_name] = max(1, group_quotas[group_name] - 1)
+
+    def extract_param(feature):
+        try:
+            if "_lag_" in feature:
+                return int(feature.split("_lag_")[-1])
+            elif "_rolling_" in feature:
+                parts = feature.split("_rolling_")[-1].split("_")
+                for part in parts:
+                    if part.isdigit():
+                        return int(part)
+                return 0
+            elif "EMA_" in feature:
+                return int(feature.split("EMA_")[-1])
+            elif "volatility_" in feature:
+                return int(feature.split("volatility_")[-1])
+            else:
+                return 0
+        except (ValueError, IndexError):
+            return 0
+
+    selected_features = []
+
+    for group_name, quota in group_quotas.items():
+        group_features = existing_groups[group_name]
+
+        if len(group_features) <= quota:
+            selected_features.extend(group_features)
+        else:
+            if group_name in ["price_basic", "rsi", "macd", "bollinger", "atr"]:
+                selected_features.extend(group_features[:quota])
+            else:
+                if any(
+                    x in group_features[0]
+                    for x in ["_lag_", "_rolling_", "EMA_", "volatility_"]
+                ):
+                    try:
+                        sorted_features = sorted(group_features, key=extract_param)
+                        step = max(1, len(sorted_features) // quota)
+                        indices = [i * step for i in range(quota)]
+                        indices = [min(i, len(sorted_features) - 1) for i in indices]
+                        selected_features.extend([sorted_features[i] for i in indices])
+                    except Exception as e:
+                        print(f"Ошибка при сортировке группы {group_name}: {e}")
+                        selected_features.extend(group_features[:quota])
+                else:
+                    step = max(1, len(group_features) // quota)
+                    indices = [i * step for i in range(quota)]
+                    indices = [min(i, len(group_features) - 1) for i in indices]
+                    selected_features.extend([group_features[i] for i in indices])
+
+    selected_features = list(dict.fromkeys(selected_features))
+
+    if len(selected_features) > target_count:
+        selected_features = selected_features[:target_count]
+    elif len(selected_features) < target_count:
+        remaining = [f for f in all_features if f not in selected_features]
+        needed = target_count - len(selected_features)
+        if remaining:
+            selected_features.extend(remaining[:needed])
+
+    print(f"{len(selected_features)} features from {len(all_features)}")
+    return selected_features
+
+
 def get_dataloaders(
     ticker: str,
     batch_size: int,
@@ -191,26 +330,8 @@ def get_dataloaders(
     )
 
     proc = preprocess_data(merged, ticker)
-    features = [
-        f"OPEN_{ticker}",
-        f"HIGH_{ticker}",
-        f"LOW_{ticker}",
-        f"CLOSE_{ticker}",
-        f"VOL_{ticker}",
-        "CLOSE_IMOEX",
-        "CLOSE_USD",
-        "RSI",
-        "SMA_RETURNS",
-        "VOLATILITY",
-        "LOG_RETURNS",
-        "MACD_LINE",
-        "MACD_SIGNAL",
-        "MACD_HIST",
-        "BB_UPPER",
-        "BB_LOWER",
-        "BB_MIDDLE",
-        "ATR",
-    ]
+    features = get_smart_features(proc, ticker, target_count=132)
+
     data = proc[features].values.astype(float)
 
     idx = features.index(f"CLOSE_{ticker}")
@@ -308,9 +429,10 @@ def get_dataloaders_multi(
     )
 
     proc = preprocess_data(merged, ticker)
-    feat_cols = [c for c in proc.columns if c != "TRADEDATE"]
-    data = proc[feat_cols].values.astype(float)
-    close_idx = feat_cols.index(f"CLOSE_{ticker}")
+    features = get_smart_features(proc, ticker, target_count=132)
+
+    data = proc[features].values.astype(float)
+    close_idx = features.index(f"CLOSE_{ticker}")
 
     n = len(data)
     max_i = n - seq_length - horizon + 1
