@@ -13,7 +13,7 @@ import torch
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from sklearn.preprocessing import RobustScaler
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, TensorDataset, Subset
 
 from app.preprocessing import preprocess_data
 
@@ -341,18 +341,35 @@ def get_dataloaders(
     X = windows[:-1]
     y = data[seq_length:, idx].reshape(-1, 1)
 
-    X_flat = X.reshape(-1, X.shape[2])
-    scaler_X = RobustScaler().fit(X_flat)
-    Xs = scaler_X.transform(X_flat).reshape(X.shape)
-    scaler_y = RobustScaler().fit(y)
-    ys = scaler_y.transform(y)
+    # Создаем датасет ДО нормализации
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+    y_tensor = torch.tensor(y, dtype=torch.float32)
+    ds = TensorDataset(X_tensor, y_tensor)
+    
+    # Временной split вместо random_split
+    split_idx = int(0.8 * len(ds))
+    train_indices = range(0, split_idx)
+    val_indices = range(split_idx, len(ds))
+    train_ds = Subset(ds, train_indices)
+    val_ds = Subset(ds, val_indices)
+    
+    train_X = torch.stack([ds[i][0] for i in train_indices])
+    train_y = torch.stack([ds[i][1] for i in train_indices])
+    
+    scaler_X = RobustScaler().fit(train_X.numpy().reshape(-1, train_X.shape[-1]))
+    scaler_y = RobustScaler().fit(train_y.numpy())
+    
+    Xs_train = scaler_X.transform(train_X.numpy().reshape(-1, train_X.shape[-1])).reshape(train_X.shape)
+    ys_train = scaler_y.transform(train_y.numpy())
+    
+    val_X = torch.stack([ds[i][0] for i in val_indices])
+    val_y = torch.stack([ds[i][1] for i in val_indices])
+    Xs_val = scaler_X.transform(val_X.numpy().reshape(-1, val_X.shape[-1])).reshape(val_X.shape)
+    ys_val = scaler_y.transform(val_y.numpy())
+    
+    train_ds = TensorDataset(torch.tensor(Xs_train, dtype=torch.float32), torch.tensor(ys_train, dtype=torch.float32))
+    val_ds = TensorDataset(torch.tensor(Xs_val, dtype=torch.float32), torch.tensor(ys_val, dtype=torch.float32))
 
-    tensor_x = torch.tensor(Xs, dtype=torch.float32)
-    tensor_y = torch.tensor(ys, dtype=torch.float32)
-    ds = TensorDataset(tensor_x, tensor_y)
-    train_ds, val_ds = random_split(
-        ds, [int(0.8 * len(ds)), len(ds) - int(0.8 * len(ds))]
-    )
     train_dl = DataLoader(
         train_ds, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
     )
@@ -447,18 +464,35 @@ def get_dataloaders_multi(
     X = np.array(X_list)
     Y = np.array(Y_list)
 
-    flat_X = X.reshape(-1, X.shape[-1])
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+    y_tensor = torch.tensor(Y, dtype=torch.float32)
+    ds = TensorDataset(X_tensor, y_tensor)
+    
+    split_idx = int(0.8 * len(ds))
+    train_indices = range(0, split_idx)
+    val_indices = range(split_idx, len(ds))
+    train_ds = Subset(ds, train_indices)
+    val_ds = Subset(ds, val_indices)
+    
+    train_X = torch.stack([ds[i][0] for i in train_indices])
+    train_y = torch.stack([ds[i][1] for i in train_indices])
+    
+    flat_X = train_X.numpy().reshape(-1, train_X.shape[-1])
     scaler_X = RobustScaler().fit(flat_X)
-    Xs = scaler_X.transform(flat_X).reshape(X.shape)
-    scaler_y = RobustScaler().fit(Y)
-    Ys = scaler_y.transform(Y)
+    scaler_y = RobustScaler().fit(train_y.numpy())
+    
+    Xs_train = scaler_X.transform(train_X.numpy().reshape(-1, flat_X.shape[-1])).reshape(train_X.shape)
+    ys_train = scaler_y.transform(train_y.numpy())
+    
+    val_X = torch.stack([ds[i][0] for i in val_indices])
+    val_y = torch.stack([ds[i][1] for i in val_indices])
+    Xs_val = scaler_X.transform(val_X.numpy().reshape(-1, flat_X.shape[-1])).reshape(val_X.shape)
+    ys_val = scaler_y.transform(val_y.numpy())
+    
+    train_ds = TensorDataset(torch.tensor(Xs_train, dtype=torch.float32), torch.tensor(ys_train, dtype=torch.float32))
+    val_ds = TensorDataset(torch.tensor(Xs_val, dtype=torch.float32), torch.tensor(ys_val, dtype=torch.float32))
 
-    tensor_x = torch.tensor(Xs, dtype=torch.float32)
-    tensor_y = torch.tensor(Ys, dtype=torch.float32)
-    ds = TensorDataset(tensor_x, tensor_y)
-    tr_n = int(0.8 * len(ds))
-    tr_ds, va_ds = random_split(ds, [tr_n, len(ds) - tr_n])
-    tr_dl = DataLoader(tr_ds, batch_size=batch_size, shuffle=True)
-    va_dl = DataLoader(va_ds, batch_size=batch_size, shuffle=False)
+    tr_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    va_dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
     return (tr_dl, va_dl, scaler_X, scaler_y) if return_scalers else (tr_dl, va_dl)

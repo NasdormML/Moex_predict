@@ -111,8 +111,8 @@ def main(cfg: DictConfig):
     os.makedirs(out_dir, exist_ok=True)
 
     best_val = float("inf")
-    no_improve = 0
-    early_patience = 5
+    no_improve = 2
+    early_patience = 8
 
     for epoch in range(1, cfg.train.epochs + 1):
         # — train
