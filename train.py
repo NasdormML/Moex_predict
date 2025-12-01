@@ -16,6 +16,25 @@ from app.optimization import optimize_model
 from app.transfer_learning import load_training_metadata, save_training_metadata
 
 
+class AsymmetricHuberLoss(nn.Module):
+    def __init__(self, delta: float = 1.0, alpha: float = 1.5):
+        super().__init__()
+        self.delta = delta
+        self.alpha = alpha
+    
+    def forward(self, pred, target):
+        error = target - pred
+        
+        weight = torch.where(error > 0, self.alpha, 1.0)
+        
+        abs_err = torch.abs(error)
+        is_small = abs_err <= self.delta
+        small_loss = 0.5 * error**2
+        large_loss = self.delta * (abs_err - 0.5 * self.delta)
+        
+        return torch.mean(weight * torch.where(is_small, small_loss, large_loss))
+
+
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -94,7 +113,8 @@ def main(cfg: DictConfig):
             else cfg.train.weight_decay
         ),
     )
-    criterion = nn.HuberLoss()
+    
+    criterion = AsymmetricHuberLoss(delta=1.0, alpha=1.5)
 
     # ReduceLROnPlateau
     if cfg.optimization.use_scheduler:
