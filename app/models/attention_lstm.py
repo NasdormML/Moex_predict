@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
+from typing import Optional
 
 
 class AttentionLayer(nn.Module):
-    def __init__(self, hidden_dim, timesteps):
+    def __init__(self, hidden_dim: int, timesteps: int):
         super().__init__()
         self.W = nn.Parameter(torch.Tensor(hidden_dim, 1))
         self.b = nn.Parameter(torch.zeros(timesteps, 1))
@@ -25,13 +26,21 @@ class LSTMModel(nn.Module):
         lstm_units: int = 128,
         fc_units: int = 64,
         dropout_rate: float = 0.1,
+        n_quantiles: Optional[int] = None,
     ):
         super().__init__()
+        self.horizon = horizon
+        self.n_quantiles = n_quantiles
+        
         self.lstm = nn.LSTM(num_features, lstm_units, batch_first=True)
         self.dropout = nn.Dropout(dropout_rate)
         self.attn = AttentionLayer(lstm_units, seq_length)
         self.fc1 = nn.Linear(lstm_units, fc_units)
-        self.fc2 = nn.Linear(fc_units, horizon)
+        
+        # 🔥 УНИВЕРСАЛЬНЫЙ выходной слой
+        output_dim = horizon * n_quantiles if n_quantiles else horizon
+        self.fc2 = nn.Linear(fc_units, output_dim)
+        
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -40,12 +49,32 @@ class LSTMModel(nn.Module):
         o = self.dropout(o)
         a = self.attn(o)  # [B, H]
         h = self.relu(self.fc1(a))
-        return self.fc2(self.dropout(h))  # [B, horizon]
+        
+        output = self.fc2(self.dropout(h))
+        
+        if self.n_quantiles:
+            output = output.view(-1, self.horizon, self.n_quantiles)  # [B, H, Q]
+        
+        return output  # [B, H] или [B, H, Q]
 
 
 def build_model(
-    seq_length: int, num_features: int, horizon: int, **arch_kwargs
+    seq_length: int,
+    num_features: int,
+    horizon: int,
+    lstm_units: int = 128,
+    fc_units: int = 64,
+    dropout_rate: float = 0.1,
+    n_quantiles: Optional[int] = None,
+    **kwargs,
 ) -> nn.Module:
+    
     return LSTMModel(
-        seq_length=seq_length, num_features=num_features, horizon=horizon, **arch_kwargs
+        seq_length=seq_length,
+        num_features=num_features,
+        horizon=horizon,
+        lstm_units=lstm_units,
+        fc_units=fc_units,
+        dropout_rate=dropout_rate,
+        n_quantiles=n_quantiles,
     )
