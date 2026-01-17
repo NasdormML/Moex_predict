@@ -37,7 +37,6 @@ class LSTMModel(nn.Module):
         self.attn = AttentionLayer(lstm_units, seq_length)
         self.fc1 = nn.Linear(lstm_units, fc_units)
         
-        # 🔥 УНИВЕРСАЛЬНЫЙ выходной слой
         output_dim = horizon * n_quantiles if n_quantiles else horizon
         self.fc2 = nn.Linear(fc_units, output_dim)
         
