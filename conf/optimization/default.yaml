@@ -12,75 +12,86 @@ n_startup_trials: 5
 n_jobs: 1
 
 search_space:
-  # TFT
-  d_model:
+
+  # =========================================
+  # Квантильные параметры (общие для всех quantile_* моделей)
+  # =========================================
+  quantiles:
+    - [0.05, 0.5, 0.95]
+
+  # =========================================
+  # TFT (Temporal Fusion Transformer)
+  # =========================================
+  tft_d_model:
     - 32
     - 64
-    - 96
     - 128
     - 256
     - 512
-  n_heads:
+  tft_n_heads:
     - 1
     - 2
     - 4
-    - 5
-    - 6
-    - 7
     - 8
-  n_layers:
+  tft_n_layers:
     - 1
     - 2
     - 3
     - 4
-    - 5
-  d_ff:
+  tft_d_ff:
     - 128
     - 256
-    - 384
     - 512
-  dropout:
+  tft_dropout:
     - 0.0
     - 0.1
     - 0.2
     - 0.3
 
-  # LSTM
+  # =========================================
+  # LSTM-Attention
+  # =========================================
   lstm_units:
     - 32
     - 64
     - 128
-    - 240
-    - 320
-    - 512
-  fc_units:
-    - 32
-    - 64
-    - 127
     - 256
     - 512
-  dropout_rate:
+  lstm_fc_units:
+    - 32
+    - 64
+    - 128
+    - 256
+  lstm_dropout:
     - 0.0
     - 0.1
     - 0.2
     - 0.3
 
-  # TCN
-  num_channels:
+  # =========================================
+  # TCN (Temporal Convolutional Network)
+  # =========================================
+  tcn_num_channels:
     - [64, 128]
     - [128, 256, 512]
     - [64, 128, 256, 512]
-  kernel_size:
+  tcn_kernel_size:
     - 3
     - 5
     - 7
     - 9
+  tcn_dropout:
+    - 0.0
+    - 0.1
+    - 0.2
+    - 0.3
 
+  # =========================================
   # Autoformer
+  # =========================================
   autoformer_d_model:
     - 32
     - 64
-    - 96
     - 128
     - 256
   autoformer_n_heads:
@@ -96,7 +107,6 @@ search_space:
   autoformer_d_ff:
     - 128
     - 256
-    - 384
     - 512
   autoformer_dropout:
     - 0.0

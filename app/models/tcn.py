@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import Optional
 
 
 class Chomp1d(nn.Module):
@@ -35,6 +36,7 @@ class TemporalBlock(nn.Module):
         self.bn1 = nn.BatchNorm1d(n_outputs)
         self.relu = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
+        
         self.conv2 = nn.Conv1d(
             n_outputs,
             n_outputs,
@@ -46,6 +48,7 @@ class TemporalBlock(nn.Module):
         self.chomp2 = Chomp1d(padding)
         self.bn2 = nn.BatchNorm1d(n_outputs)
         self.dropout2 = nn.Dropout(dropout)
+        
         self.downsample = (
             nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
         )
@@ -55,10 +58,12 @@ class TemporalBlock(nn.Module):
         out = self.chomp1(out)
         out = self.relu(self.bn1(out))
         out = self.dropout1(out)
+        
         out = self.conv2(out)
         out = self.chomp2(out)
         out = self.relu(self.bn2(out))
         out = self.dropout2(out)
+        
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)
 
@@ -73,8 +78,13 @@ class TCNModel(nn.Module):
         kernel_size: int = 2,
         dropout: float = 0.2,
         fc_units: int = 64,
+        n_quantiles: Optional[int] = None,
     ):
         super().__init__()
+        self.horizon = horizon
+        self.n_quantiles = n_quantiles
+        
+        # TCN блоки
         layers = []
         for i, out_ch in enumerate(num_channels):
             in_ch = num_features if i == 0 else num_channels[i - 1]
@@ -91,23 +101,50 @@ class TCNModel(nn.Module):
                     dropout=dropout,
                 )
             )
+        
         self.tcn = nn.Sequential(*layers)
         self.fc = nn.Linear(num_channels[-1], fc_units)
-        self.out = nn.Linear(fc_units, horizon)
+        
+        output_dim = horizon * n_quantiles if n_quantiles else horizon
+        self.out = nn.Linear(fc_units, output_dim)
+        
         self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: [B, T, F]
-        x = x.permute(0, 2, 1)  # [B, F, T]
+        # x: [B, T, F] -> [B, F, T]
+        x = x.permute(0, 2, 1)
         y = self.tcn(x)  # [B, C, T]
         last = y[:, :, -1]  # [B, C]
         h = self.relu(self.fc(last))
-        return self.out(h)  # [B, horizon]
+        
+        output = self.out(h)
+        
+        # 🔥 РЕШАПИНГ для квантилей
+        if self.n_quantiles:
+            output = output.view(-1, self.horizon, self.n_quantiles)  # [B, H, Q]
+        
+        return output  # [B, H] или [B, H, Q]
 
 
 def build_model(
-    seq_length: int, num_features: int, horizon: int, **arch_kwargs
+    seq_length: int,
+    num_features: int,
+    horizon: int,
+    num_channels: list[int],
+    kernel_size: int = 2,
+    dropout: float = 0.2,
+    fc_units: int = 64,
+    n_quantiles: Optional[int] = None,
+    **kwargs,
 ) -> nn.Module:
+    
     return TCNModel(
-        seq_length=seq_length, num_features=num_features, horizon=horizon, **arch_kwargs
+        seq_length=seq_length,
+        num_features=num_features,
+        horizon=horizon,
+        num_channels=num_channels,
+        kernel_size=kernel_size,
+        dropout=dropout,
+        fc_units=fc_units,
+        n_quantiles=n_quantiles,
     )
