@@ -3,6 +3,7 @@ import pickle
 import random
 
 import hydra
+import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,6 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from app.data import get_dataloaders_multi
 from app.models.factory import get_model
+from app.models.quantile_loss import QuantileLoss, CoverageMetric
 from app.optimization import optimize_model
 from app.transfer_learning import load_training_metadata, save_training_metadata
 
@@ -24,14 +26,11 @@ class AsymmetricHuberLoss(nn.Module):
     
     def forward(self, pred, target):
         error = target - pred
-        
         weight = torch.where(error > 0, self.alpha, 1.0)
-        
         abs_err = torch.abs(error)
         is_small = abs_err <= self.delta
         small_loss = 0.5 * error**2
         large_loss = self.delta * (abs_err - 0.5 * self.delta)
-        
         return torch.mean(weight * torch.where(is_small, small_loss, large_loss))
 
 
@@ -97,11 +96,18 @@ def main(cfg: DictConfig):
     # Model + optimizer + criterion
     X0, _ = next(iter(train_dl))
     num_feat = X0.shape[-1]
+    
+    # quantiles в params
+    model_params = dict(cfg.model.params)
+    if cfg.model.name.startswith("quantile_"):
+        model_params["quantiles"] = cfg.model.quantiles
+        print(f"[Train] Quantile mode: {cfg.model.quantiles}")
+    
     model = get_model(
         cfg.model.name,
         num_features=num_feat,
         horizon=cfg.train.horizon,
-        **cfg.model.params,
+        **model_params,
     ).to(device)
 
     optimizer = optim.AdamW(
@@ -114,7 +120,13 @@ def main(cfg: DictConfig):
         ),
     )
     
-    criterion = AsymmetricHuberLoss(delta=1.0, alpha=1.5)
+    # Динамический выбор loss
+    if cfg.model.name.startswith("quantile_"):
+        criterion = QuantileLoss(cfg.model.quantiles)
+        print(f"[Train] Using QuantileLoss")
+    else:
+        criterion = AsymmetricHuberLoss(delta=1.0, alpha=1.5)
+        print(f"[Train] Using AsymmetricHuberLoss")
 
     # ReduceLROnPlateau
     if cfg.optimization.use_scheduler:
@@ -131,8 +143,13 @@ def main(cfg: DictConfig):
     os.makedirs(out_dir, exist_ok=True)
 
     best_val = float("inf")
-    no_improve = 2
+    no_improve = 0
     early_patience = 8
+
+    # MLflow init
+    mlflow_enabled = cfg.get("mlflow", {}).get("enabled", False)
+    if mlflow_enabled:
+        mlflow.start_run(run_name=f"{cfg.data.ticker}_{cfg.model.name}_{cfg.train.version}")
 
     for epoch in range(1, cfg.train.epochs + 1):
         # — train
@@ -165,16 +182,51 @@ def main(cfg: DictConfig):
         # — metrics
         preds_np = np.concatenate(all_preds)
         tgt_np = np.concatenate(all_targets)
-        inv_p = scaler_y.inverse_transform(preds_np)
-        inv_t = scaler_y.inverse_transform(tgt_np)
+        
+        # Для квантилей (0.5)
+        is_quantile = cfg.model.name.startswith("quantile_")
+        if is_quantile:
+            preds_for_metrics = preds_np[:, :, 1]  # [B, H] — 50% квантиль
+        else:
+            preds_for_metrics = preds_np
+        
+        inv_p = scaler_y.inverse_transform(preds_for_metrics.reshape(-1, preds_for_metrics.shape[-1]))
+        inv_t = scaler_y.inverse_transform(tgt_np.reshape(-1, tgt_np.shape[-1]))
         rmse = np.sqrt(mean_squared_error(inv_t, inv_p))
         mae = mean_absolute_error(inv_t, inv_p)
 
+        # — coverage для квантильных
+        coverage_metrics = {}
+        if is_quantile:
+            coverage_lower, coverage_upper = CoverageMetric.calculate_coverage(
+                torch.tensor(preds_np), 
+                torch.tensor(tgt_np), 
+                cfg.model.quantiles
+            )
+            if coverage_lower is not None:
+                coverage_metrics = {
+                    "val_coverage_lower": coverage_lower,
+                    "val_coverage_upper": coverage_upper,
+                    "val_coverage_error": abs(coverage_lower - 0.05) + abs(coverage_upper - 0.95)
+                }
+                print(f"  Coverage: {coverage_lower:.1%} / {coverage_upper:.1%}")
+
         print(
             f"Epoch {epoch}/{cfg.train.epochs} | "
-            f"train_loss={train_loss:.4f} | val_loss_scaled={val_loss:.4f} | "
+            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f} | "
             f"RMSE={rmse:.4f} | MAE={mae:.4f}"
         )
+
+        # — MLflow logging
+        if mlflow_enabled:
+            metrics = {
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "val_rmse": rmse,
+                "val_mae": mae,
+                **coverage_metrics
+            }
+            mlflow.log_metrics(metrics, step=epoch)
 
         # — checkpoint
         if val_loss < best_val:
@@ -191,9 +243,10 @@ def main(cfg: DictConfig):
             scheduler.step(val_loss)
 
         if no_improve >= early_patience:
-            print(f"Early stopping {epoch}, no improvement {early_patience} epochs.")
+            print(f"Early stopping at epoch {epoch}, no improvement for {early_patience} epochs.")
             break
 
+    # Save scalers
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_X.pkl"), "wb") as fx:
         pickle.dump(scaler_X, fx)
     with open(os.path.join(out_dir, f"{cfg.data.ticker}_scaler_y.pkl"), "wb") as fy:
@@ -208,6 +261,10 @@ def main(cfg: DictConfig):
     model_params["output_dim"] = cfg.train.horizon
     model_params["horizon"] = cfg.train.horizon
     model_params["num_features"] = num_feat
+    
+    # Сохраняем quantiles в metadata
+    if is_quantile:
+        model_params["quantiles"] = cfg.model.quantiles
 
     ticker_md["versions"][version] = {
         "train_date": cfg.data.end_date,
@@ -219,6 +276,9 @@ def main(cfg: DictConfig):
 
     save_training_metadata(_ensure_str_keys(md))
     print(f"Метаданные для {cfg.data.ticker}@{version} сохранены.")
+    
+    if mlflow_enabled:
+        mlflow.end_run()
 
 
 if __name__ == "__main__":
