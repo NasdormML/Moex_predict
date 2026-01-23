@@ -3,3 +3,4 @@ defaults:
 
 name: quantile_lstm
 quantiles: [0.05, 0.5, 0.95]
+use_interday: false
