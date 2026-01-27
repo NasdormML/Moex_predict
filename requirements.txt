@@ -7,7 +7,7 @@ scikit-learn==1.6.1
 torch==2.6.0
 
 # Experiment tracking & HPO
-mlflow==3.5.0rc0
+mlflow==3.5.0
 optuna==4.3.0
 
 # Scheduling
