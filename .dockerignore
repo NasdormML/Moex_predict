@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+.vscode
+.git
+data_cache
+history
+mlflow
+.env
+.env.local
+*.egg-info
