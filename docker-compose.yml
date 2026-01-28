@@ -1,0 +1,52 @@
+services:
+  api:
+    build:
+      context: .
+      args:
+        - BASE_IMAGE=python:3.11-slim
+    image: moex_predict_api:latest
+    container_name: moex_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5001
+      - API_PORT=5000
+      - HISTORY_DIR=/data/history
+      - DATA_CACHE_DIR=/data/data_cache
+      - MODEL_ARTIFACTS_DIR=/data/models
+    volumes:
+      - ./history:/data/history
+      - ./data_cache:/data/data_cache
+      - ./models:/data/models
+      - ./mlflow:/mlflow
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health || true"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mlflow:
+    image: python:3.11-slim
+    container_name: mlflow_server
+    restart: unless-stopped
+    volumes:
+      - ./mlflow:/mlflow
+    environment:
+      - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
+    command: /bin/sh -c "pip install --no-cache-dir mlflow sqlalchemy alembic && \
+                        mkdir -p /mlflow/artifacts && \
+                        mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db \
+                                      --default-artifact-root /mlflow/artifacts \
+                                      --host 0.0.0.0 --port 5001"
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
