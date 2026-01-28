@@ -99,32 +99,13 @@ def predict(ticker: str, target_date: date):
     if len(X_all) < seq:
         raise HTTPException(422, f"Недостаточно данных: {len(X_all)} < {seq}")
 
-    result = predict_price(
+    preds = predict_price(
         bundle["model"], bundle["scaler_X"], bundle["scaler_y"], X_all, seq
     )
 
-    is_quantile = isinstance(result, dict) and "mean" in result
-    if is_quantile:
-        preds = result["mean"]
-        lower = result["lower"]
-        upper = result["upper"]
-        print(f"[API] Quantile forecast: mean={preds[:2]}, range=[{lower[0]:.2f}, {upper[0]:.2f}]")
-    else:
-        preds = result
-        lower = upper = None
-        print(f"[API] Point forecast: {preds[:2]}")
-
-    # MLflow
     for idx, val in enumerate(preds, start=1):
         mlflow.log_metric(f"pred_step_{idx}", val)
-    
-    # Для квантилей логируем доверительные интервалы
-    if is_quantile:
-        for idx, (l_val, u_val) in enumerate(zip(lower, upper), start=1):
-            mlflow.log_metric(f"pred_step_{idx}_lower", l_val)
-            mlflow.log_metric(f"pred_step_{idx}_upper", u_val)
 
-    # Генерация дат
     future_dates = []
     d = last_known + timedelta(days=1)
     while len(future_dates) < len(preds):
@@ -132,43 +113,17 @@ def predict(ticker: str, target_date: date):
             future_dates.append(d)
         d += timedelta(days=1)
 
-    # Сохранение в историю
-    rec_data = {"DATE": future_dates, "predicted_price": preds}
-    if is_quantile:
-        rec_data["predicted_lower"] = lower
-        rec_data["predicted_upper"] = upper
-    
-    rec = pd.DataFrame(rec_data)
+    # Сохраняем в историю
+    rec = pd.DataFrame({"DATE": future_dates, "predicted_price": preds})
     pf = os.path.join(history_dir, f"predictions_{ticker}.csv")
-    # Добавляем заголовки если файла нет
-    header = not os.path.exists(pf)
-    rec.to_csv(pf, mode="a", header=header, index=False)
-    print(f"[API] Saved {len(rec)} predictions to {pf}")
+    rec.to_csv(pf, mode="a", header=not os.path.exists(pf), index=False)
 
-    if is_quantile:
-        return {
-            "ticker": ticker,
-            "known_up_to": last_known.isoformat(),
-            "forecast": [
-                {
-                    "date": d.isoformat(),
-                    "mean": float(m),
-                    "confidence_interval": {
-                        "lower_5%": float(l),
-                        "upper_95%": float(u),
-                    },
-                }
-                for d, m, l, u in zip(future_dates, preds, lower, upper)
-            ],
-        }
-    else:
-        # Обратная совместимость
-        return {
-            "ticker": ticker,
-            "known_up_to": last_known.isoformat(),
-            "forecast_dates": [d.isoformat() for d in future_dates],
-            "predictions": preds,
-        }
+    return {
+        "ticker": ticker,
+        "known_up_to": last_known.isoformat(),
+        "forecast_dates": [d.isoformat() for d in future_dates],
+        "predictions": preds,
+    }
 
 
 if __name__ == "__main__":
