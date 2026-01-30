@@ -29,4 +29,4 @@ jobs:
           docker push ghcr.io/nasdorm/moex_predict:latest
           
           echo " Готово! Образ доступен по адресу:"
-          echo "ghcr.io/nasdorm/moex_predict:latest"
+          echo "ghcr.io/nasdorm/moex_predict:latest" 
