@@ -26,7 +26,7 @@ jobs:
           docker tag nasdorm/moex_predict:latest ghcr.io/nasdorm/moex_predict:latest
           
           echo "⬆ Загружаем в GitHub Packages..."
-          docker push ghcr.io/nasdorm/moex_predict:latest
+          docker push ghcr.io/${{ github.repository_owner }}/moex_predict:latest
           
           echo " Готово! Образ доступен по адресу:"
-          echo "ghcr.io/nasdorm/moex_predict:latest" 
+          echo "ghcr.io/nasdorm/moex_predict:latest"
