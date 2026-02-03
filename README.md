@@ -2,19 +2,18 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![Hydra](https://img.shields.io/badge/hydra-1.3.2-blue)
-![Pandas](https://img.shields.io/badge/pandas-2.2.3-%23150458?logo=pandas\&logoColor=white)
-![Numpy](https://img.shields.io/badge/numpy-2.2.4-%23013243?logo=numpy\&logoColor=white)
-![PyTorch](https://img.shields.io/badge/torch-2.6.0-%23EE4C2C?logo=pytorch\&logoColor=white)
-![MLflow](https://img.shields.io/badge/mlflow-2.21.3-%23004750?logo=mlflow\&logoColor=white)
-![Apscheduler](https://img.shields.io/badge/apscheduler-3.11.0-blue)
-![Requests](https://img.shields.io/badge/requests-2.32.3-%23BA1200?logo=requests\&logoColor=white)
-![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-%23009ECE?logo=fastapi\&logoColor=white)
-![Pydantic](https://img.shields.io/badge/pydantic-2.11.3-%23008BD3?logo=pydantic\&logoColor=white)
-![Uvicorn](https://img.shields.io/badge/uvicorn-0.34.1-%232C3E50?logo=uvicorn\&logoColor=white)
+![Pandas](https://img.shields.io/badge/pandas-2.2.3-%23150458?logo=pandas&logoColor=white)
+![Numpy](https://img.shields.io/badge/numpy-2.2.4-%23013243?logo=numpy&logoColor=white)
+![PyTorch](https://img.shields.io/badge/torch-2.6.0-%23EE4C2C?logo=pytorch&logoColor=white)
+![MLflow](https://img.shields.io/badge/mlflow-2.21.3-%23004750?logo=mlflow&logoColor=white)
+![APScheduler](https://img.shields.io/badge/apscheduler-3.11.0-blue)
+![Requests](https://img.shields.io/badge/requests-2.32.3-%23BA1200?logo=requests&logoColor=white)
+![FastAPI](https://img.shields.io/badge/fastapi-0.115.12-%23009ECE?logo=fastapi&logoColor=white)
+![Pydantic](https://img.shields.io/badge/pydantic-2.11.3-%23008BD3?logo=pydantic&logoColor=white)
+![Uvicorn](https://img.shields.io/badge/uvicorn-0.34.1-%232C3E50?logo=uvicorn&logoColor=white)
 ![Flake8](https://img.shields.io/badge/code%20style-Flake8-4183C4?logo=flake8&logoColor=white)
 
-
-**MOEX Price Prediction** is an end-to-end forecasting solution for Moscow Exchange (MOEX) stocks (e.g. SBER, GAZP, ROSN) using historical data, technical indicators, and deep learning with PyTorch.
+**MOEX Price Prediction** is an end-to-end forecasting solution for Moscow Exchange (MOEX) stocks (e.g., SBER, GAZP, ROSN) using historical data, technical indicators, and deep learning with PyTorch.
 
 ---
 
@@ -35,17 +34,17 @@
 
 ## Project Overview
 
-This project fetches MOEX historical end‑of‑day data (for **any ticker** available via the MOEX API in `app/data.py`), computes technical indicators (RSI, SMA, MACD, Bollinger Bands, ATR), trains PyTorch models (LSTM‑Attention, TCN, Transformer) via Hydra‑powered experiments, and serves predictions through a FastAPI REST API. Check [Hydra Configuration](#hydra-configuration).
+This project fetches MOEX historical end-of-day data (for **any ticker** available via the MOEX API in `app/data.py`), computes technical indicators (RSI, SMA, MACD, Bollinger Bands, ATR), trains PyTorch models (LSTM-Attention, TCN, Transformer) via Hydra-powered experiments, and serves predictions through a FastAPI REST API. See [Hydra Configuration](#hydra-configuration) for details.
 
 ---
 
 ## Key Features
 
-* **Modular Architecture:** Clear separation between data ingestion, preprocessing, model training, and serving.
-* **Hydra Experiments:** Easily switch models (`lstm`, `tcn`, `tft`) and tickers (`SBER`, `GAZP`, `ROSN`, etc.) with command-line overrides.
-* **Versioned Artifacts:** Models and scalers saved under `saved_models/v{version}`; metadata tracks versions and architecture.
-* **Auto‑Retraining:** Optional performance monitoring triggers retraining via MLflow and Optuna.
-* **Live API:** FastAPI endpoint for on‑demand predictions.
+- **Modular Architecture:** Clear separation between data ingestion, preprocessing, model training, and serving
+- **Hydra Experiments:** Easily switch models (`lstm`, `tcn`, `tft`) and tickers (`SBER`, `GAZP`, `ROSN`, etc.) with command-line overrides
+- **Versioned Artifacts:** Models and scalers saved under `saved_models/v{version}`; metadata tracks versions and architecture
+- **Auto-Retraining:** Optional performance monitoring triggers retraining via MLflow and Optuna
+- **Live API:** FastAPI endpoint for on-demand predictions
 
 ---
 
@@ -61,47 +60,47 @@ MOEX_PREDICT/
 │   │   ├── tcn.py
 │   │   ├── tft.py
 │   │   └── factory.py
-│   ├── model_manager.py       # Loading versioned models & scalers
-│   ├── transfer_learning.py   # Retraining logic & metadata
-│   ├── predict.py             # Prediction wrapper
-│   ├── monitoring.py          # Performance validation
-│   └── main.py                # FastAPI application
-├── conf/                      # Hydra configuration
+│   ├── model_manager.py        # Loading versioned models & scalers
+│   ├── transfer_learning.py    # Retraining logic & metadata
+│   ├── predict.py              # Prediction wrapper
+│   ├── monitoring.py           # Performance validation
+│   └── main.py                 # FastAPI application
+├── conf/                       # Hydra configuration
 │   ├── config.yaml
 │   ├── data/
-│   │   └── default.yaml       # Data loader settings
+│   │   └── default.yaml        # Data loader settings
 │   ├── model/
-│   │   ├── lstm.yaml          # LSTM params
-│   │   ├── tcn.yaml           # TCN params
-│   │   └── tft.yaml           # Transformer params
-│   ├── optimization
-│   │   └── default.yaml       # HPO settings
-│   │
+│   │   ├── lstm.yaml           # LSTM params
+│   │   ├── tcn.yaml            # TCN params
+│   │   └── tft.yaml            # Transformer params
+│   ├── optimization/
+│   │   └── default.yaml        # HPO settings
 │   └── train/
-│       └── default.yaml       # Training settings & versioning
-├── saved_models/              # Versioned model artifacts
+│       └── default.yaml        # Training settings & versioning
+├── saved_models/               # Versioned model artifacts
 │   ├── v1/
 │   │   ├── SBER_model.pth
 │   │   ├── SBER_scaler_X.pkl
 │   │   ├── SBER_scaler_y.pkl
 │   │   └── ...
-│   └── v2/ ...
-├── train.py                   # Hydra entrypoint for experiments
-├── Makefile                   # install, run api, mlflow, clean
-└── README.md                  # This file
+│   └── v2/
+│       └── ...
+├── train.py                    # Hydra entrypoint for experiments
+├── Makefile                    # install, run, clean commands
+└── README.md                   # This file
 ```
 
 ---
 
 ## Technologies
 
-* **Python:** 3.11
-* **Config:** Hydra (1.3.2), OmegaConf
-* **Data:** Pandas, NumPy, scikit-learn
-* **Deep Learning:** PyTorch 2.6
-* **Experiment Tracking:** MLflow 2.21
-* **Web API:** FastAPI, Uvicorn
-* **Scheduling:** APScheduler
+- **Python:** 3.11
+- **Config:** Hydra (1.3.2), OmegaConf
+- **Data:** Pandas, NumPy, scikit-learn
+- **Deep Learning:** PyTorch 2.6
+- **Experiment Tracking:** MLflow 2.21
+- **Web API:** FastAPI, Uvicorn
+- **Scheduling:** APScheduler
 
 ---
 
@@ -110,24 +109,24 @@ MOEX_PREDICT/
 All experiments are driven by `conf/config.yaml`. Override sections via CLI:
 
 ```bash
-# Train TCN on GAZP, version v2:
+# Train TCN on GAZP, version v2
 python3 train.py \
-   model=tcn \
-   data.ticker=GAZP \
-   train.horizon=5 \
-   train.version=v2
+    model=tcn \
+    data.ticker=GAZP \
+    train.horizon=5 \
+    train.version=v2
 
-# Train model with HPO:
- python3 train.py \
-  model=lstm \
-  data.ticker=SBER \
-  data.start_date=2013-01-01 \
-  train.horizon=5 \
-  train.epochs=20 \
-  train.version=v1 \
-  optimization.enable=true \
-  optimization.n_trials=20 \
-  optimization.epochs_per_trial=20
+# Train model with HPO
+python3 train.py \
+    model=lstm \
+    data.ticker=SBER \
+    data.start_date=2013-01-01 \
+    train.horizon=5 \
+    train.epochs=20 \
+    train.version=v1 \
+    optimization.enable=true \
+    optimization.n_trials=20 \
+    optimization.epochs_per_trial=20
 ```
 
 See `conf/` for defaults.
@@ -137,96 +136,132 @@ See `conf/` for defaults.
 ## Installation & Setup
 
 ```bash
-# 1. Clone
+# 1. Clone repository
 git clone https://github.com/NasdormML/Moex_predict.git
 cd Moex_predict
 
-# 2. Create Virtual env & Install deps
+# 2. Create virtual environment and install dependencies
 make install
 
-# 3. Run MLflow & FastAPI
+# 3. Run MLflow and FastAPI
 make run
 ```
 
-* **MLflow UI:** [http://127.0.0.1:5001](http://127.0.0.1:5001)
-* **API Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **MLflow UI:** http://127.0.0.1:5001
+- **API Docs:** http://127.0.0.1:8000/docs
+
+### Available Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make install` | Create venv and install dependencies |
+| `make run` | Run MLflow + FastAPI (development with reload) |
+| `make run-prod` | Run MLflow + FastAPI (production with workers) |
+| `make api` | Run only FastAPI |
+| `make mlflow` | Run only MLflow server |
+| `make lint` | Run Flake8 linter |
+| `make clean` | Remove `__pycache__` and `*.pyc` files |
 
 ---
 
 ## Usage
 
-1. **Train a model:**
+### 1. Train a Model
 
-   ```bash
-   python train.py model=lstm data.ticker=SBER
-   ```
+```bash
+python train.py model=lstm data.ticker=SBER
+```
 
-2. **Serve predictions:**
+### 2. Get Predictions via API
 
-   ```bash
-   make api
-   curl -X POST "http://127.0.0.1:8000/predict" \
-        -H "Content-Type: application/json" \
-        -d '{"ticker":"SBER","start_date":"2025-01-01","end_date":"2025-05-01"}'
-   ```
+```bash
+curl -X POST "http://127.0.0.1:8000/predict/SBER/2026-02-10" \
+    -H "Content-Type: application/json"
+```
 
 ---
 
 ## API Reference
 
-**POST /predict**
-```bash
+### POST `/predict/{ticker}/{target_date}`
+
+Generate price forecast for a ticker up to the target date.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `ticker` | string | Stock ticker (e.g., `SBER`, `GAZP`) |
+| `target_date` | date | Forecast horizon limit (YYYY-MM-DD) |
+
+**Response:**
+
+```json
 {
   "ticker": "SBER",
-  "known_up_to": "2025-06-28",
+  "known_up_to": "2026-02-03",
+  "requested_target_date": "2026-02-10",
   "forecast_dates": [
-    "2025-06-30",
-    "2025-07-01",
-    "2025-07-02",
-    "2025-07-03",
-    "2025-07-04"
+    "2026-02-04",
+    "2026-02-05",
+    "2026-02-06",
+    "2026-02-07",
+    "2026-02-10"
   ],
   "predictions": [
-    307.3966369628906,
-    306.07830810546875,
-    305.132080078125,
-    305.0485534667969,
-    305.2849426269531
+    307.40,
+    306.08,
+    305.13,
+    305.05,
+    305.28
   ]
 }
-  ```
+```
+
+### GET `/health`
+
+Health check endpoint.
+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "models_loaded": 1
+}
+```
 
 ---
 
 ## Model Training & Visualization
 
-<img src="https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b">
+### SBER Performance
 
-**SBER Performance**
+![SBER Performance](https://github.com/user-attachments/assets/e1af2d59-fa59-405b-a55c-6bd60e48756b)
 
-| Model       | MSE   | RMSE | MAE  | MAPE  |
-| ----------- | ----- | ---- | ---- | ----- |
-| LSTM-Attn   | 19.87 | 4.46 | 3.11 | 1.20% |
+| Model | MSE | RMSE | MAE | MAPE |
+|-------|-----|------|-----|------|
+| LSTM-Attn | 19.87 | 4.46 | 3.11 | 1.20% |
 | Transformer | 11.37 | 3.37 | 2.42 | 0.97% |
 
-<img src="https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030">
+### GAZP Performance
 
-**GAZP Performance**
+![GAZP Performance](https://github.com/user-attachments/assets/060b4922-4ba7-4bad-9bef-d9e25f047030)
 
-| Model | MSE   | RMSE | MAE  | MAPE  |
-| ----- | ----- | ---- | ---- | ----- |
-| TCN   | 18.31 | 4.28 | 3.04 | 2.08% |
+| Model | MSE | RMSE | MAE | MAPE |
+|-------|-----|------|-----|------|
+| TCN | 18.31 | 4.28 | 3.04 | 2.08% |
 
-<img src="https://github.com/user-attachments/assets/1f8ccaa2-942e-4810-81c4-ae0fe939f349">
+### ROSN Performance
 
-**ROSN Performance**
+![ROSN Performance](https://github.com/user-attachments/assets/1f8ccaa2-942e-4810-81c4-ae0fe939f349)
 
-| Model       | MSE   | RMSE | MAE  | MAPE  |
-| ----------- | ----- | ---- | ---- | ----- |
+| Model | MSE | RMSE | MAE | MAPE |
+|-------|-----|------|-----|------|
 | Transformer | 61.50 | 7.84 | 5.65 | 1.10% |
 
 ---
 
 ## License
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
