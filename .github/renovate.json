@@ -1,0 +1,23 @@
+{
+  "extends": ["config:base"],
+  "schedule": ["every weekend"],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "automerge": false
+    },
+    {
+      "matchDatasources": ["pypi"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "matchCurrentVersion": "!/^0/"
+    }
+  ],
+  "dockerfile": {
+    "fileMatch": ["(^|/|\\.)Dockerfile$", "(^|/)Dockerfile[^/]*$"]
+  },
+  "pip_requirements": {
+    "fileMatch": ["(^|/)([\\w-]*)requirements.*\\.(txt|pip)$"]
+  }
+}
