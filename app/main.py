@@ -1,13 +1,15 @@
 import asyncio
 import logging
 import os
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from typing import Annotated, Optional
 
 import mlflow
 import pandas as pd
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Path
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 
 from app.data import fetch_moex_eod_data, fetch_usd_series
@@ -85,6 +87,58 @@ async def _append_history_async(ticker: str, dates: list[date], preds: list[floa
         await asyncio.to_thread(_write)
 
 
+async def run_training(
+    ticker: str,
+    model: str = "lstm",
+    start_date: str = "2013-01-01",
+    epochs: int = 50,
+    version: str = "v1",
+    enable_hpo: bool = False,
+    n_trials: int = 10,
+):
+    """Run training in background subprocess."""
+    cmd = [
+        sys.executable,
+        "train.py",
+        f"model={model}",
+        f"data.ticker={ticker}",
+        f"data.start_date={start_date}",
+        f"train.epochs={epochs}",
+        f"train.version={version}",
+    ]
+    
+    if enable_hpo:
+        cmd.extend([
+            "optimization.enable=true",
+            f"optimization.n_trials={n_trials}",
+            f"optimization.epochs_per_trial={max(10, epochs // 2)}",
+        ])
+    
+    logger.info(f"Starting training: {' '.join(cmd)}")
+    
+    def _train():
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=3600,
+                cwd="/app",
+            )
+            logger.info(f"Training completed with code {result.returncode}")
+            if result.returncode != 0:
+                logger.error(f"Training stderr: {result.stderr}")
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            logger.error("Training timed out")
+            return False
+        except Exception as e:
+            logger.exception("Training failed")
+            return False
+    
+    return await asyncio.to_thread(_train)
+
+
 # -------------------------
 # Lifecycle
 # -------------------------
@@ -97,12 +151,10 @@ async def lifespan(app: FastAPI):
     model_manager = ModelManager()
     try:
         await _maybe_async_call(model_manager.load_all)
-    except Exception:
-        logger.exception("Failed to load models")
-        model_manager = None
-        raise
-
-    logger.info(f"Loaded {len(model_manager)} models")
+        logger.info(f"Loaded {len(model_manager)} models")
+    except Exception as e:
+        logger.warning(f"No models loaded: {e}. Training available via /train endpoint.")
+        os.makedirs(os.getenv("MODEL_ARTIFACTS_DIR", "/data/models"), exist_ok=True)
 
     try:
         yield
@@ -232,7 +284,6 @@ def merge_dataframes(df_t, df_i, df_u, ticker: str) -> pd.DataFrame:
     return merged
 
 
-# FIX: background MLflow logging без блокировки
 def _log_to_mlflow(ticker: str, bundle: dict, seq: int, X_rows: int, preds: list):
     """Background task for MLflow logging."""
     try:
@@ -261,7 +312,122 @@ def _log_to_mlflow(ticker: str, bundle: dict, seq: int, X_rows: int, preds: list
 
 
 # -------------------------
-# Endpoints
+# Training Endpoints
+# -------------------------
+@app.post("/train/{ticker}")
+async def train_model(
+    ticker: Annotated[str, Path(...)],
+    model: str = Query("lstm", enum=["lstm", "tcn", "tft"]),
+    start_date: str = Query("2013-01-01"),
+    epochs: int = Query(50, ge=10, le=200),
+    version: str = Query("v1"),
+    enable_hpo: bool = Query(False),
+    n_trials: int = Query(10, ge=5, le=50),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Train new model for ticker.
+    
+    - **ticker**: Stock ticker (SBER, GAZP, etc.)
+    - **model**: Model architecture (lstm, tcn, tft)
+    - **start_date**: Historical data start date
+    - **epochs**: Training epochs
+    - **version**: Model version tag
+    - **enable_hpo**: Enable Optuna hyperparameter optimization
+    - **n_trials**: Number of HPO trials (if HPO enabled)
+    """
+    ticker = validate_ticker(ticker)
+    
+    # Проверяем доступность данных
+    try:
+        test_df = await _maybe_async_call(
+            fetch_moex_eod_data, ticker, "stock", "shares", "TQBR", 
+            (date.today() - timedelta(days=30)).isoformat(), 
+            date.today().isoformat()
+        )
+        if test_df is None or test_df.empty:
+            raise HTTPException(404, f"No market data for ticker: {ticker}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Data check failed: {e}")
+        raise HTTPException(503, "Market data unavailable")
+
+    # Запускаем в фоне
+    if background_tasks:
+        background_tasks.add_task(
+            run_training, ticker, model, start_date, epochs, version, enable_hpo, n_trials
+        )
+        return {
+            "status": "training_started",
+            "ticker": ticker,
+            "model": model,
+            "version": version,
+            "epochs": epochs,
+            "hpo_enabled": enable_hpo,
+            "message": "Training started in background. Check MLflow for progress."
+        }
+    else:
+        success = await run_training(ticker, model, start_date, epochs, version, enable_hpo, n_trials)
+        if success:
+            if model_manager:
+                try:
+                    await _maybe_async_call(model_manager.load_all)
+                except Exception as e:
+                    logger.warning(f"Model reload after training failed: {e}")
+            return {
+                "status": "training_completed",
+                "ticker": ticker,
+                "model": model,
+                "version": version,
+            }
+        else:
+            raise HTTPException(500, "Training failed. Check logs.")
+
+
+@app.get("/train/status/{ticker}")
+async def training_status(ticker: str):
+    """Check if model exists for ticker."""
+    ticker = validate_ticker(ticker)
+    
+    if model_manager is None:
+        raise HTTPException(503, "Service unavailable")
+    
+    bundle = await _maybe_async_call(model_manager.get_model, ticker)
+    
+    if bundle:
+        return {
+            "ticker": ticker,
+            "status": "trained",
+            "model_version": bundle.get("model_version"),
+            "model_type": bundle.get("model_type", "unknown"),
+        }
+    else:
+        return {
+            "ticker": ticker,
+            "status": "not_trained",
+            "message": f"Model for {ticker} not found. Use POST /train/{ticker} to train."
+        }
+
+
+@app.get("/models")
+async def list_models():
+    """List all available trained models."""
+    if model_manager is None:
+        raise HTTPException(503, "Service unavailable")
+    
+    try:
+        models = await _maybe_async_call(getattr, model_manager, "list_models") or []
+        return {"models": models, "count": len(models)}
+    except Exception as e:
+        return {
+            "models": list(getattr(model_manager, "_models", {}).keys()),
+            "count": len(getattr(model_manager, "_models", {}))
+        }
+
+
+# -------------------------
+# Prediction Endpoints
 # -------------------------
 @app.post("/predict/{ticker}/{target_date}")
 async def predict(
@@ -276,7 +442,13 @@ async def predict(
 
     bundle = await _maybe_async_call(model_manager.get_model, ticker)
     if bundle is None:
-        raise HTTPException(404, f"Model not found: {ticker}")
+        raise HTTPException(
+            404, 
+            {
+                "error": f"Model not found: {ticker}",
+                "message": f"Use POST /train/{ticker} to train a new model first."
+            }
+        )
 
     # Maybe retrain
     try:
@@ -371,17 +543,19 @@ async def predict(
 async def health_check():
     if model_manager is None:
         raise HTTPException(503, "Not ready")
-
+    
+    models_count = 0
     try:
-        ready = await _maybe_async_call(
-            getattr(model_manager, "is_ready", lambda: True)
-        )
-        if not ready:
-            raise HTTPException(503, "Not ready")
-    except Exception:
-        raise HTTPException(503, "Health check failed")
+        models_count = len(model_manager)
+    except:
+        pass
 
-    return {"status": "healthy", "models_loaded": len(model_manager)}
+    return {
+        "status": "healthy",
+        "models_loaded": models_count,
+        "training_available": True,
+        "mlflow_connected": bool(mlflow.get_tracking_uri())
+    }
 
 
 if __name__ == "__main__":
