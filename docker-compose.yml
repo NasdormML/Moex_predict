@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        - BASE_IMAGE=python:3.11-slim
+        - BASE_IMAGE=python:3.13-slim-bookworm
     image: moex_predict_api:latest
     container_name: moex_api
     restart: unless-stopped
@@ -25,28 +25,26 @@ services:
     depends_on:
       - mlflow
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health || true"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
+      test: ["CMD", "sh", "-c", "curl -sf http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   mlflow:
-    image: python:3.11-slim
+    image: python:3.13-slim-bookworm
     container_name: mlflow_server
     restart: unless-stopped
     volumes:
       - ./mlflow:/mlflow
     environment:
       - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
-    command: /bin/sh -c "pip install --no-cache-dir mlflow sqlalchemy alembic && \
+    command: /bin/sh -c "apt-get update && apt-get install -y curl && \
+                        pip install --no-cache-dir mlflow==2.21.3 sqlalchemy alembic && \
                         mkdir -p /mlflow/artifacts && \
+                        rm -f /mlflow/mlflow.db && \
                         mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db \
                                       --default-artifact-root /mlflow/artifacts \
                                       --host 0.0.0.0 --port 5001"
     ports:
       - "5001:5001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
