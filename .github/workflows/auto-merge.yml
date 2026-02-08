@@ -12,34 +12,35 @@ permissions:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: >-
-      contains('github-actions[bot],dependabot[bot]', github.actor)
+    if: contains(fromJson('["github-actions[bot]", "dependabot[bot]"]'), github.actor)
+    env:
+      GH_TOKEN: ${{ secrets.PAT_TOKEN }}
     steps:
-      - name: Authenticate gh CLI
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          echo "$GH_TOKEN" | gh auth login --with-token
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Show PR info
         run: |
           echo "PR: #${{ github.event.pull_request.number }}"
-          gh pr view ${{ github.event.pull_request.number }} --json number,title,author
+          gh pr view ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --json number,title,author,state
 
       - name: Get changed files
         id: files
         run: |
           PR="${{ github.event.pull_request.number }}"
-          FILES=$(gh pr diff --name-only $PR)
+          FILES=$(gh pr diff $PR --repo ${{ github.repository }} --name-only)
           echo "Changed files:"
           echo "$FILES"
-          echo "::set-output name=list::$FILES"
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Decide whether to merge (only requirements files)
         id: decide
         run: |
           set -euo pipefail
-          PR="${{ github.event.pull_request.number }}"
           FILES="${{ steps.files.outputs.list }}"
 
           if [ -z "$FILES" ]; then
@@ -51,10 +52,10 @@ jobs:
           NON_REQ=""
           while IFS= read -r f; do
             f="$(echo "$f" | tr -d '\r')"
-            if [ -z "$f" ]; then
-              continue
-            fi
-            if echo "$f" | grep -Eq '(?:^|/)(requirements|requirements.*|requirements\.txt|requirements\.in)$'; then
+            [ -z "$f" ] && continue
+            
+            # Проверяем различные варианты requirements файлов
+            if echo "$f" | grep -Eq 'requirements.*\.(txt|in)$'; then
               continue
             else
               NON_REQ="$NON_REQ $f"
@@ -70,16 +71,16 @@ jobs:
           echo "All changed files are requirements-related. Proceed to merge."
           echo "merge=true" >> $GITHUB_OUTPUT
 
-      - name: Enable auto-merge (set PR to auto-merge when checks pass)
+      - name: Enable auto-merge (squash when checks pass)
         if: steps.decide.outputs.merge == 'true'
         run: |
           PR="${{ github.event.pull_request.number }}"
-          gh pr merge $PR --squash --auto --body "Auto-merged when checks pass" || {
-            echo "gh pr merge returned non-zero. Trying direct merge (if checks already passed)."
-            gh pr merge $PR --squash --admin || {
-              echo "Merge attempt failed."
-              exit 1
-            }
+          
+          # Пробуем включить auto-merge (сливать когда чеки пройдут)
+          gh pr merge $PR --repo ${{ github.repository }} --squash --auto --body "Auto-merged: dependency update" || {
+            echo "Auto-merge не удался, пробуем прямой merge..."
+            # Если чеки уже прошли, пробуем сразу смержить
+            gh pr merge $PR --repo ${{ github.repository }} --squash --body "Auto-merged: dependency update"
           }
 
       - name: Skip - not requirements
