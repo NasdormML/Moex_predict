@@ -18,7 +18,7 @@ optuna==4.7.0
 alembic==1.14.1
 
 # Scheduling
-apscheduler==3.11.0
+apscheduler==3.11.2
 tzlocal==5.2
 
 # Web & API
