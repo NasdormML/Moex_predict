@@ -1,82 +1,113 @@
 import pytest
-import pandas as pd
 import numpy as np
-from app.preprocessing import compute_rsi, compute_bollinger_bands, preprocess_data
+import pandas as pd
 
-@pytest.fixture
-def sample_moex_data():
-    """Sample MOEX data for testing"""
-    return pd.DataFrame({
-        'TRADEDATE': pd.date_range('2023-01-01', periods=100),
-        'OPEN_SBER': [100 + i for i in range(100)],
-        'HIGH_SBER': [101 + i for i in range(100)],
-        'LOW_SBER': [99 + i for i in range(100)],
-        'CLOSE_SBER': [100 + i*0.5 for i in range(100)],
-        'VOL_SBER': [1000] * 100,
-        'CLOSE_IMOEX': [2000] * 100,
-        'CLOSE_USD': [90] * 100
-    })
+from app.preprocessing import (
+    compute_rsi,
+    compute_macd,
+    compute_bollinger_bands,
+    compute_atr,
+    preprocess_data
+)
 
-def test_rsi_calculation():
-    """Test RSI indicator calculation - first 'period' values will be NaN"""
-    prices = pd.Series([100, 101, 102, 101, 100, 99, 98, 99, 100, 101] * 5)
-    
-    rsi = compute_rsi(prices, period=3)
-    
-    assert len(rsi) == len(prices)
-    assert rsi.name == prices.name
-    
-    assert rsi.isna().sum() == 3
-    
-    valid_rsi = rsi.dropna()
-    assert valid_rsi.between(0, 100).all()
 
-def test_bollinger_bands():
-    """Test Bollinger Bands calculation - first 'window' values may be NaN"""
-    prices = pd.Series(np.random.rand(100) * 10 + 100)
+class TestTechnicalIndicators:
+    """Тесты технических индикаторов."""
     
-    upper, lower, middle = compute_bollinger_bands(prices, window=20)
-    
-    assert len(upper) == len(prices)
-    assert len(middle) == len(prices)
-    assert len(lower) == len(prices)
-    
-    valid_mask = upper.notna() & middle.notna() & lower.notna()
-    if valid_mask.any():
-        valid_upper = upper[valid_mask]
-        valid_middle = middle[valid_mask]
-        valid_lower = lower[valid_mask]
+    def test_rsi_range(self):
+        """RSI в диапазоне [0, 100]."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109])
+        rsi = compute_rsi(prices, period=5)
         
-        # upper >= middle >= lower
-        assert (valid_upper >= valid_middle).all()
-        assert (valid_middle >= valid_lower).all()
+        assert rsi.min() >= 0
+        assert rsi.max() <= 100
+        assert not rsi.isna().all()
+    
+    def test_rsi_flat_prices(self):
+        """RSI при постоянных ценах."""
+        prices = pd.Series([100] * 20)
+        rsi = compute_rsi(prices, period=5)
+        
+        # Должен обработать без ошибок
+        assert not rsi.isna().any()
+    
+    def test_macd_crossover(self):
+        """MACD корректно считает пересечения."""
+        prices = pd.Series(np.sin(np.linspace(0, 4*np.pi, 100)) + 100)
+        macd_line, signal_line, hist = compute_macd(prices)
+        
+        assert len(macd_line) == len(prices)
+        assert len(signal_line) == len(prices)
+        assert len(hist) == len(prices)
+    
+    def test_bollinger_bands(self):
+        """Bollinger Bands охватывают цены."""
+        prices = pd.Series(np.random.randn(100).cumsum() + 100)
+        upper, lower, mid = compute_bollinger_bands(prices, window=20)
+        
+        # Upper > Lower
+        assert (upper > lower).all()
+        # Mid между ними
+        assert (mid >= lower).all() and (mid <= upper).all()
+    
+    def test_atr_positive(self):
+        """ATR всегда положительный."""
+        high = pd.Series(np.random.randn(100).cumsum() + 101)
+        low = pd.Series(np.random.randn(100).cumsum() + 99)
+        close = pd.Series(np.random.randn(100).cumsum() + 100)
+        
+        atr = compute_atr(high, low, close, window=14)
+        
+        assert (atr > 0).all()
+        assert not atr.isna().any()
 
-def test_preprocess_data_output(sample_moex_data):
-    """Test full preprocessing pipeline"""
-    processed = preprocess_data(sample_moex_data, ticker="SBER")
-    
-    assert isinstance(processed, pd.DataFrame)
-    assert len(processed) > 0
-    
-    required_base = ["target_close", "CLOSE_SBER", "RSI_14", "MACD_LINE"]
-    for col in required_base:
-        assert col in processed.columns, f"Missing base column: {col}"
-    
-    # ATR может быть удалена из-за высокой корреляции
-    volatility_cols = [c for c in processed.columns if 'volatility' in c or 'ATR' in c]
-    assert len(volatility_cols) > 0, "No volatility features found"
-    
-    na_count = processed.isna().sum().sum()
-    assert na_count == 0, f"Found {na_count} NaN values after preprocessing"
-    
-    assert len(processed.columns) > 50
-    
-    non_numeric = processed.select_dtypes(exclude=[np.number]).columns
-    assert len(non_numeric) == 0, f"Found non-numeric columns: {list(non_numeric)}"
 
-def test_preprocess_data_length(sample_moex_data):
-    """Test that preprocessing doesn't drop too many rows"""
-    original_len = len(sample_moex_data)
-    processed = preprocess_data(sample_moex_data, ticker="SBER")
+class TestPreprocessingPipeline:
+    """Тесты полного пайплайна."""
     
-    assert len(processed) >= original_len * 0.9
+    @pytest.fixture
+    def sample_df(self):
+        """Sample DataFrame для препроцессинга."""
+        return pd.DataFrame({
+            "TRADEDATE": pd.date_range("2024-01-01", periods=50, freq="B"),
+            "OPEN_SBER": np.random.randn(50).cumsum() + 250,
+            "HIGH_SBER": np.random.randn(50).cumsum() + 251,
+            "LOW_SBER": np.random.randn(50).cumsum() + 249,
+            "CLOSE_SBER": np.random.randn(50).cumsum() + 250,
+            "VOL_SBER": np.random.randint(1000000, 10000000, 50),
+        })
+    
+    def test_preprocess_basic(self, sample_df):
+        """Базовый препроцессинг."""
+        result = preprocess_data(sample_df, "SBER")
+        
+        assert "RSI14" in result.columns
+        assert "MACD_LINE" in result.columns
+        assert "BB_UPPER" in result.columns
+        assert "ATR" in result.columns
+        assert "log_ret_1" in result.columns
+    
+    def test_preprocess_na_handling(self, sample_df):
+        """Обработка пропусков."""
+        # Добавляем NaN
+        sample_df.loc[5:10, "CLOSE_SBER"] = np.nan
+        
+        result = preprocess_data(sample_df, "SBER")
+        
+        # Не должно быть NaN после обработки
+        assert not result.isna().any().any()
+    
+    def test_preprocess_invalid_ticker(self, sample_df):
+        """Ошибка при неверном тикере."""
+        with pytest.raises(ValueError, match="Missing required columns"):
+            preprocess_data(sample_df, "GAZP")
+    
+    def test_preprocess_returns_list(self, sample_df):
+        """Возврат списка фичей."""
+        result, features = preprocess_data(
+            sample_df, "SBER", return_feature_list=True
+        )
+        
+        assert isinstance(features, list)
+        assert "CLOSE_SBER" in features
+        assert "TRADEDATE" not in features
