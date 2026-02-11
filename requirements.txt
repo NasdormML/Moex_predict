@@ -24,7 +24,7 @@ tzlocal==5.2
 # Web & API
 fastapi==0.128.1
 uvicorn[standard]==0.34.1
-starlette==0.49.1
+starlette==0.52.1
 pydantic==2.12.5
 pydantic-core==2.33.1
 requests==2.32.3
