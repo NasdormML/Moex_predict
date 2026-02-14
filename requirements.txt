@@ -52,7 +52,7 @@ greenlet==3.1.1
 urllib3==2.6.3
 certifi==2025.1.31
 charset-normalizer==3.4.4
-idna==3.10
+idna==3.11
 
 # Utils
 python-dateutil==2.9.0
