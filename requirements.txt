@@ -19,7 +19,7 @@ alembic==1.14.1
 
 # Scheduling
 apscheduler==3.11.2
-tzlocal==5.2
+tzlocal==5.3.1
 
 # Web & API
 fastapi==0.128.1
