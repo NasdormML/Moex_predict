@@ -91,12 +91,23 @@ class ModelManager:
         # Load model
         try:
             model = get_model(factory_key, **params)
-            state = torch.load(
+
+            checkpoint = torch.load(
                 weight_file,
                 map_location="cpu",
-                weights_only=True,
+                weights_only=False,
             )
-            model.load_state_dict(state)
+
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                state_dict = checkpoint["model_state_dict"]
+                logger.info(
+                    f"Loaded checkpoint for {ticker}@{version} "
+                    f"(epoch {checkpoint.get('epoch', 'unknown')})"
+                )
+            else:
+                state_dict = checkpoint
+
+            model.load_state_dict(state_dict)
             model.eval()
         except Exception as e:
             logger.error(f"Failed to load model {ticker}@{version}: {e}")
