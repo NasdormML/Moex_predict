@@ -15,7 +15,7 @@ torchvision==0.21.0
 # Experiment tracking & HPO
 mlflow==3.9.0
 optuna==4.7.0
-alembic==1.14.1
+alembic==1.18.4
 
 # Scheduling
 apscheduler==3.11.2
