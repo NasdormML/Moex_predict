@@ -58,7 +58,7 @@ idna==3.11
 python-dateutil==2.9.0
 pytz==2025.2
 tqdm==4.67.1
-packaging==24.2
+packaging==26.0
 typing-extensions==4.12.2
 filelock==3.20.3
 fsspec==2025.3.0
