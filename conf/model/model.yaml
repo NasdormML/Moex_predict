@@ -1,0 +1,7 @@
+name:
+params:
+  embed_dim: 16
+  hidden_dims: [128, 64, 32]
+  dropout: 0.2
+  leaning_rate: 0.0001 
+  quantiles: [0.1, 0.9]
