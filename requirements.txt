@@ -10,7 +10,7 @@ scipy==1.14.1
 
 # Deep learning
 torch==2.10.0
-torchvision==0.21.0
+torchvision==0.26.0
 
 # Experiment tracking & HPO
 mlflow==3.10.1
