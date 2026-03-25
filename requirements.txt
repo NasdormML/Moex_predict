@@ -34,7 +34,7 @@ anyio==4.12.1
 # Configuration
 hydra-core==1.3.2
 omegaconf==2.3.0
-antlr4-python3-runtime==4.9.3
+antlr4-python3-runtime==4.13.2
 
 # Visualization
 matplotlib==3.10.8
