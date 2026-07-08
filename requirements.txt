@@ -50,7 +50,7 @@ greenlet==3.5.0
 
 # HTTP utilities
 urllib3==2.6.3
-certifi==2026.2.25
+certifi==2026.6.17
 charset-normalizer==3.4.4
 idna==3.11
 
