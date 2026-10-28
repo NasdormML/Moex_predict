@@ -9,7 +9,7 @@ scikit-learn==1.8.0
 scipy==1.14.1
 
 # Deep learning
-torch==2.10.0
+torch==2.14.1
 torchvision==0.26.0
 
 # Experiment tracking & HPO
